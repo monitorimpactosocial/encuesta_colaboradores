@@ -22,33 +22,20 @@
     <div class="wrap">
       <div class="card">
         <h1>Encuesta de Colaboradores</h1>
-        <p class="muted">Esta URL en GitHub Pages es solo una portada. La aplicación operativa corre en Google Apps Script.</p>
-        <p>Para abrir el sistema completo (login, dashboard e invitaciones), use la URL de despliegue <code>.../exec</code> de Apps Script.</p>
+        <p class="muted">Redirigiendo automáticamente a la aplicación operativa en Google Apps Script...</p>
+        <p>Si no redirige en unos segundos, use el botón de acceso directo.</p>
         <div class="row">
-          <a id="openGas" class="btn" href="#" aria-disabled="true">Abrir aplicación (GAS)</a>
+          <a id="openGas" class="btn" href="https://script.google.com/macros/s/AKfycbxbV-gn8XsNY2Ow8UpT78JaOw7mdkhe1l-cR54-8w5fgkkd-3Y9SYw3Gz4RSH6kWXfzkQ/exec">Abrir aplicación (GAS)</a>
           <a class="btn alt" href="./README.md">Ver README</a>
         </div>
-        <p id="hint" class="muted" style="margin-top:14px">Puede pasar la URL de GAS con <code>?gas=https://script.google.com/.../exec</code>.</p>
+        <p id="hint" class="muted" style="margin-top:14px">URL configurada y lista para acceso directo.</p>
       </div>
     </div>
 
     <script>
       (function () {
-        var params = new URLSearchParams(window.location.search);
-        var gas = params.get('gas') || localStorage.getItem('encuesta_colab_gas_url') || '';
-        var btn = document.getElementById('openGas');
-        var hint = document.getElementById('hint');
-
-        if (gas && /^https:\/\/script\.google\.com\//.test(gas)) {
-          localStorage.setItem('encuesta_colab_gas_url', gas);
-          btn.href = gas;
-          btn.removeAttribute('aria-disabled');
-          hint.textContent = 'URL de Google Apps Script detectada y guardada en este navegador.';
-          return;
-        }
-
-        btn.style.opacity = '.55';
-        btn.style.pointerEvents = 'none';
+        var gas = 'https://script.google.com/macros/s/AKfycbxbV-gn8XsNY2Ow8UpT78JaOw7mdkhe1l-cR54-8w5fgkkd-3Y9SYw3Gz4RSH6kWXfzkQ/exec';
+        window.location.replace(gas);
       })();
     </script>
   </body>
