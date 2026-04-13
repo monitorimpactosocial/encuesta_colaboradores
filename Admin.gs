@@ -21,7 +21,7 @@ function getDashboardSummary(sessionToken, editionId) {
     return jsonParse_(cached, null) || {};
   }
 
-  var allRows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var allRows = getCombinedAnalyticRows_();
   var rows = editionFilter
     ? allRows.filter(function(r){ return normalizeText_(r.edicion) === editionFilter; })
     : allRows;
@@ -98,7 +98,7 @@ function sortGrupoEdad_(items) {
 function listResponses(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
   limit = Number(limit || 200);
-  var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var rows = getCombinedAnalyticRows_();
   rows.sort(function(a,b){ return String(b.submission_ts).localeCompare(String(a.submission_ts)); });
   var fields = [
     'edicion','fecha_encuesta','tipo_colaborador','sexo','edad',
@@ -110,6 +110,98 @@ function listResponses(sessionToken, limit) {
     fields.forEach(function(f){ out[f] = r[f]; });
     return out;
   });
+}
+
+/**
+ * Devuelve filas combinadas para analitica:
+ * 1) snapshot embebido (historico, lectura rapida)
+ * 2) filas live desde BASE_ANALITICA (respuestas nuevas)
+ * La deduplicacion se hace por source_uuid y fallback por (edicion|respondente_id|fecha_encuesta).
+ */
+function getCombinedAnalyticRows_() {
+  var snapRows = getEmbeddedSnapshotRows_();
+  var liveRows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var out = [];
+  var seen = {};
+
+  function addRow(r) {
+    var key = normalizeText_(r.source_uuid);
+    if (!key) key = [
+      normalizeText_(r.edicion),
+      normalizeText_(r.respondente_id),
+      normalizeText_(r.fecha_encuesta)
+    ].join('|');
+    if (!key) key = 'row_' + String(out.length + 1);
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(r);
+  }
+
+  snapRows.forEach(addRow);
+  liveRows.forEach(addRow);
+  return out;
+}
+
+/**
+ * Lee CSV embebido en SnapshotData.html entre marcadores:
+ * <!-- SNAPSHOT_CSV_BEGIN --> ... <!-- SNAPSHOT_CSV_END -->
+ */
+function getEmbeddedSnapshotRows_() {
+  try {
+    var raw = include('SnapshotData');
+    var begin = '<!-- SNAPSHOT_CSV_BEGIN -->';
+    var end = '<!-- SNAPSHOT_CSV_END -->';
+    var i = raw.indexOf(begin);
+    var j = raw.indexOf(end);
+    if (i < 0 || j < 0 || j <= i) return [];
+    var csv = raw.substring(i + begin.length, j).trim();
+    if (!csv) return [];
+
+    var matrix = Utilities.parseCsv(csv);
+    if (!matrix || matrix.length < 2) return [];
+    var headers = matrix[0].map(function(h){ return normalizeText_(h); });
+    var rows = [];
+    for (var r = 1; r < matrix.length; r++) {
+      var row = matrix[r];
+      if (!row || row.join('') === '') continue;
+      var obj = {};
+      for (var c = 0; c < headers.length; c++) obj[headers[c]] = row[c];
+      rows.push(obj);
+    }
+    return rows;
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Genera CSV listo para pegar en SnapshotData.html.
+ * Uso: buildSnapshotCsv(sessionToken, '2026')
+ */
+function buildSnapshotCsv(sessionToken, editionId) {
+  requireRole_(sessionToken, ['admin']);
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var filter = normalizeText_(editionId);
+  if (filter) rows = rows.filter(function(r){ return normalizeText_(r.edicion) === filter; });
+  if (!rows.length) return '';
+
+  var fields = [
+    'submission_ts','edicion','fecha_encuesta','tipo_colaborador','sexo','edad','edad_grupo',
+    'departamento_residencia','descuento_ips_actual','salario_actual_banda',
+    'empresa_contratista','estado_calidad','n_flags','respondente_id','source_uuid'
+  ];
+  var lines = [];
+  lines.push(fields.join(','));
+  rows.forEach(function(r){
+    var vals = fields.map(function(f){
+      var v = normalizeText_(r[f]);
+      if (v.indexOf('"') > -1) v = v.replace(/"/g, '""');
+      if (/[",\n]/.test(v)) v = '"' + v + '"';
+      return v;
+    });
+    lines.push(vals.join(','));
+  });
+  return lines.join('\n');
 }
 
 function listUsers(sessionToken) {
