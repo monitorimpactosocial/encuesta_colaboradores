@@ -7,7 +7,8 @@ const state = {
   sessionToken: localStorage.getItem('encuesta_colab_session') || '',
   user: null,
   bootstrap: null,
-  statsCache: null,
+  statsCacheByEdition: {},
+  dashboardEdition: 'ALL',
   schema: null,
   token: (window.SERVER_CONTEXT && window.SERVER_CONTEXT.token) || '',
   surveyStartedAt: localStorage.getItem('encuesta_colab_started_at') || '',
@@ -31,6 +32,15 @@ function statusBadge(v){
   const t=String(v||'');
   const cls=t==='OK'||t==='Abierta'||t==='Usado'?'ok':t==='Crítico'||t==='Anulado'?'danger':t==='Revisar'||t==='Enviado'||t==='Generado'?'warn':'muted';
   return `<span class="badge ${cls}">${esc(t)}</span>`;
+}
+function safeItems(items, label){
+  if(Array.isArray(items) && items.length) return items;
+  return [{label: label || 'Sin dato', value: 0}];
+}
+
+function setTabError(view, err, fallback){
+  const msg = (err && err.message) ? err.message : (fallback || 'No se pudo cargar la vista.');
+  view.innerHTML = `<div class="card"><p class="muted">${esc(msg)}</p></div>`;
 }
 
 /* ── Chart helpers ─────────────────────────────────── */
@@ -181,7 +191,7 @@ async function loadBootstrap(){
   try{
     state.bootstrap=await call('getBootstrap',state.sessionToken);
     state.user=state.bootstrap.user;
-    state.statsCache=null; // limpiar cache al recargar
+    state.statsCacheByEdition={}; // limpiar cache al recargar
     renderPanel();
   }catch(err){ clearSession(); renderLogin(err.message||'Sesión expirada.'); }
 }
@@ -233,7 +243,7 @@ function renderPanel(){
     rb.disabled=true; rb.textContent='Recalculando...';
     try{
       await call('rebuildAnalytics');
-      state.statsCache=null;
+      state.statsCacheByEdition={};
       renderCurrentTab();
     }catch(err){alert(err.message||err);}
     rb.disabled=false; rb.textContent='↻ Recalcular analítica';
@@ -244,17 +254,26 @@ function renderPanel(){
 function renderCurrentTab(){
   const view=document.getElementById('view');
   Object.keys(CHARTS).forEach(k=>destroyChart(k));
-  if(state.activeTab==='dashboard')    return renderDashboard(view);
-  if(state.activeTab==='responses')    return renderResponses(view);
-  if(state.activeTab==='invitations')  return renderInvitations(view);
-  if(state.activeTab==='users')        return renderUsers(view);
-  if(state.activeTab==='config')       return renderConfig(view);
-  if(state.activeTab==='editions')     return renderEditions(view);
+
+  const tabHandlers = {
+    dashboard: renderDashboard,
+    responses: renderResponses,
+    invitations: renderInvitations,
+    users: renderUsers,
+    config: renderConfig,
+    editions: renderEditions
+  };
+  const handler = tabHandlers[state.activeTab];
+  if(!handler){
+    view.innerHTML='<div class="card"><p class="muted">Vista no disponible.</p></div>';
+    return;
+  }
+  Promise.resolve(handler(view)).catch(err=>setTabError(view, err, 'No se pudo cargar la vista seleccionada.'));
 }
 
 /* ── DASHBOARD ─────────────────────────────────────── */
 async function renderDashboard(view){
-  // Skeleton inmediato
+  const editionKey = state.dashboardEdition || 'ALL';
   view.innerHTML=`
     <div class="stats-row">
       ${[...Array(5)].map(()=>`<div class="skel skel-stat"></div>`).join('')}
@@ -269,115 +288,75 @@ async function renderDashboard(view){
       ${[...Array(2)].map(()=>`<div class="card"><div class="skel skel-chart-sm"></div></div>`).join('')}
     </div>`;
 
-  // Cargar stats (con cache)
-  if(!state.statsCache){
-    try{ state.statsCache=await call('getDashboardSummary',state.sessionToken); }
-    catch(err){
-      view.innerHTML=`<div class="card"><p class="muted">${esc(err.message||'Error al cargar estadísticas.')}</p></div>`;
-      return;
-    }
+  if(!state.statsCacheByEdition[editionKey]){
+    const editionParam = editionKey === 'ALL' ? '' : editionKey;
+    state.statsCacheByEdition[editionKey] = await call('getDashboardSummary', state.sessionToken, editionParam);
   }
-  const s=state.statsCache;
-  const tot=n(s.total)||1;
+
+  const s = state.statsCacheByEdition[editionKey] || {};
+  const editionOptions = [{label:'Todas las ediciones', value:'ALL'}].concat(
+    (s.edicionesDisponibles || []).map(x => ({label:x.label, value:x.label, count:x.value}))
+  );
 
   view.innerHTML=`
-    <!-- KPIs -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="spread">
+        <div>
+          <h3 style="margin-bottom:4px">Tablero ejecutivo</h3>
+          <p class="muted" style="font-size:12px">Vista consolidada de indicadores operativos y de calidad.</p>
+        </div>
+        <div class="row">
+          <label class="label" style="margin:0">Edicion</label>
+          <select class="select" id="dashEdition" style="min-width:210px">
+            ${editionOptions.map(opt=>`<option value="${esc(opt.value)}" ${state.dashboardEdition===opt.value?'selected':''}>${esc(opt.label)}${opt.count!=null?` (${opt.count})`:''}</option>`).join('')}
+          </select>
+          <button class="btn secondary" id="dashRefresh">Actualizar</button>
+        </div>
+      </div>
+    </div>
+
     <div class="stats-row">
-      <div class="stat-card c-teal">
-        <div class="stat-icon">📊</div>
-        <div class="stat-v">${n(s.total).toLocaleString()}</div>
-        <div class="stat-l">Registros analíticos</div>
-      </div>
-      <div class="stat-card c-indigo">
-        <div class="stat-icon">🏭</div>
-        <div class="stat-v">${n(s.directos).toLocaleString()}</div>
-        <div class="stat-l">Colaboradores directos</div>
-      </div>
-      <div class="stat-card c-amber">
-        <div class="stat-icon">🤝</div>
-        <div class="stat-v">${n(s.indirectos).toLocaleString()}</div>
-        <div class="stat-l">Colaboradores indirectos</div>
-      </div>
-      <div class="stat-card c-emerald">
-        <div class="stat-icon">🛡️</div>
-        <div class="stat-v">${n(s.conIpsPct)}%</div>
-        <div class="stat-l">Cobertura IPS</div>
-      </div>
-      <div class="stat-card c-rose">
-        <div class="stat-icon">👥</div>
-        <div class="stat-v">${n(s.edadProm)}</div>
-        <div class="stat-l">Edad promedio (años)</div>
-      </div>
+      <div class="stat-card c-teal"><div class="stat-icon">#</div><div class="stat-v">${n(s.total).toLocaleString()}</div><div class="stat-l">Registros analiticos</div></div>
+      <div class="stat-card c-indigo"><div class="stat-icon">D</div><div class="stat-v">${n(s.directos).toLocaleString()}</div><div class="stat-l">Colaboradores directos</div></div>
+      <div class="stat-card c-amber"><div class="stat-icon">I</div><div class="stat-v">${n(s.indirectos).toLocaleString()}</div><div class="stat-l">Colaboradores indirectos</div></div>
+      <div class="stat-card c-emerald"><div class="stat-icon">IPS</div><div class="stat-v">${n(s.conIpsPct)}%</div><div class="stat-l">Cobertura IPS</div></div>
+      <div class="stat-card c-rose"><div class="stat-icon">Edad</div><div class="stat-v">${n(s.edadProm)}</div><div class="stat-l">Edad promedio</div></div>
     </div>
 
-    <!-- Donuts -->
     <div class="charts-3">
-      <div class="card">
-        <div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">${n(s.total)} total</span></div>
-        <canvas id="cTipo" height="220"></canvas>
-      </div>
-      <div class="card">
-        <div class="chart-hd"><h3>Sexo</h3><span class="chart-total">${n(s.total)} total</span></div>
-        <canvas id="cSexo" height="220"></canvas>
-      </div>
-      <div class="card">
-        <div class="chart-hd"><h3>Cobertura IPS actual</h3><span class="chart-total">${n(s.conIpsPct)}% con IPS</span></div>
-        <canvas id="cIps" height="220"></canvas>
-      </div>
+      <div class="card"><div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">${n(s.total)} total</span></div><canvas id="cTipo" height="220"></canvas></div>
+      <div class="card"><div class="chart-hd"><h3>Sexo</h3><span class="chart-total">${n(s.total)} total</span></div><canvas id="cSexo" height="220"></canvas></div>
+      <div class="card"><div class="chart-hd"><h3>Cobertura IPS actual</h3><span class="chart-total">${n(s.conIpsPct)}% con IPS</span></div><canvas id="cIps" height="220"></canvas></div>
     </div>
 
-    <!-- Barras grandes -->
     <div class="charts-2">
-      <div class="card">
-        <div class="chart-hd">
-          <h3>Departamento de residencia</h3>
-          <span class="chart-total">top 15</span>
-        </div>
-        <canvas id="cDept" height="360"></canvas>
-      </div>
-      <div class="card">
-        <div class="chart-hd">
-          <h3>Salario actual</h3>
-          <span class="chart-total">${n(s.total)} resp.</span>
-        </div>
-        <canvas id="cSal" height="360"></canvas>
-      </div>
+      <div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><canvas id="cDept" height="360"></canvas></div>
+      <div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">${n(s.total)} resp.</span></div><canvas id="cSal" height="360"></canvas></div>
     </div>
 
-    <!-- Fila inferior -->
     <div class="charts-2">
-      <div class="card">
-        <div class="chart-hd"><h3>Respuestas por edición</h3></div>
-        <canvas id="cEdic" height="200"></canvas>
-      </div>
-      <div class="card">
-        <div class="chart-hd"><h3>Grupo etario</h3></div>
-        <canvas id="cEdad" height="200"></canvas>
-      </div>
+      <div class="card"><div class="chart-hd"><h3>Respuestas por edicion</h3></div><canvas id="cEdic" height="200"></canvas></div>
+      <div class="card"><div class="chart-hd"><h3>Grupo etario</h3></div><canvas id="cEdad" height="200"></canvas></div>
     </div>`;
 
-  requestAnimationFrame(()=>{
-    // Donut: Tipo
-    donut('cTipo', s.porTipo, ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
+  document.getElementById('dashEdition').onchange = (e) => {
+    state.dashboardEdition = e.target.value || 'ALL';
+    renderDashboard(view);
+  };
+  document.getElementById('dashRefresh').onclick = async () => {
+    delete state.statsCacheByEdition[state.dashboardEdition || 'ALL'];
+    await renderDashboard(view);
+  };
 
-    // Donut: Sexo
-    donut('cSexo', s.porSexo, ['#3b82f6','#ec4899','#a3a3a3']);
-
-    // Donut: IPS
-    donut('cIps', s.porIpsActual, ['#059669','#f43f5e','#a3a3a3']);
-
-    // HBar: Departamentos
-    hbar('cDept', s.porDeptResidencia, TEAL_GRAD);
-
-    // HBar: Salario (etiquetas cortas)
-    const salItems = (s.porSalario||[]).map(x=>({label:shortSalario(x.label),value:x.value}));
+  requestAnimationFrame(() => {
+    donut('cTipo', safeItems(s.porTipo, 'Sin dato'), ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
+    donut('cSexo', safeItems(s.porSexo, 'Sin dato'), ['#3b82f6','#ec4899','#a3a3a3']);
+    donut('cIps', safeItems(s.porIpsActual, 'Sin dato'), ['#059669','#f43f5e','#a3a3a3']);
+    hbar('cDept', safeItems(s.porDeptResidencia, 'Sin dato'), TEAL_GRAD);
+    const salItems = safeItems(s.porSalario, 'Sin dato').map(x=>({label:shortSalario(x.label),value:x.value}));
     hbar('cSal', salItems, AMBER_GRAD);
-
-    // VBar: Edición
-    vbar('cEdic', s.porEdicion, ['#0f766e','#14b8a6','#6366f1']);
-
-    // HBar: Grupo etario
-    hbar('cEdad', s.porGrupoEdad, TEAL_GRAD);
+    vbar('cEdic', safeItems(s.porEdicion, 'Sin dato'), ['#0f766e','#14b8a6','#6366f1']);
+    hbar('cEdad', safeItems(s.porGrupoEdad, 'Sin dato'), TEAL_GRAD);
   });
 }
 
@@ -613,7 +592,7 @@ async function renderEditions(view){
       end_date:document.getElementById('eEnd').value,
       notes:document.getElementById('eNotes').value
     });
-    state.statsCache=null;
+    state.statsCacheByEdition={};
     await loadBootstrap();
   };
 }

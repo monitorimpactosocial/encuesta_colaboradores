@@ -11,16 +11,23 @@ function getBootstrap(sessionToken) {
   };
 }
 
-function getDashboardSummary(sessionToken) {
+function getDashboardSummary(sessionToken, editionId) {
   requireRole_(sessionToken, ['admin','viewer']);
   var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var editionFilter = normalizeText_(editionId);
+  if (editionFilter) {
+    rows = rows.filter(function(r){ return normalizeText_(r.edicion) === editionFilter; });
+  }
+  var allRows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
   var indirectos = rows.filter(function(r){ return r.tipo_colaborador === 'Indirecto'; });
   var directos   = rows.filter(function(r){ return r.tipo_colaborador === 'Directo'; });
-  var conIps     = rows.filter(function(r){ return normalizeText_(r.descuento_ips_actual) === 'sí'; }).length;
+  var conIps     = rows.filter(function(r){ return upperKey_(r.descuento_ips_actual) === 'SI'; }).length;
   var edades     = rows.map(function(r){ return Number(r.edad); }).filter(function(n){ return !isNaN(n) && n >= 15 && n <= 80; });
   var edadProm   = edades.length ? Math.round(edades.reduce(function(a,b){return a+b;},0) / edades.length * 10) / 10 : 0;
 
   return {
+    edicionFiltro: editionFilter || '',
+    edicionesDisponibles: countBy_(allRows, 'edicion').sort(function(a,b){ return a.label.localeCompare(b.label); }),
     total:      rows.length,
     directos:   directos.length,
     indirectos: indirectos.length,
@@ -41,7 +48,7 @@ function getDashboardSummary(sessionToken) {
 function countBy_(rows, field) {
   var out = {};
   rows.forEach(function(r) {
-    var k = normalizeText_(r[field]) || '(vacío)';
+    var k = normalizeText_(r[field]) || 'Sin dato';
     out[k] = (out[k] || 0) + 1;
   });
   return Object.keys(out).sort().map(function(k){ return { label: k, value: out[k] }; });
