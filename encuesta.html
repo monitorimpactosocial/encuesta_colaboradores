@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Encuesta de Colaboradores Paracel">
+  <title>Encuesta de Colaboradores | Paracel</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
+</head>
+<body>
+
+<div id="survey-app">
+  <div class="survey-container">
+
+    <!-- HEADER -->
+    <div class="survey-header">
+      <div class="survey-header-logo">🌳</div>
+      <h1>Encuesta de Colaboradores</h1>
+      <p>Paracel S.A. · Año <span id="survey-year">2026</span></p>
+    </div>
+
+    <!-- Preview banner -->
+    <div class="alert alert-warning hidden" id="survey-preview-banner">
+      <span>👁️</span>
+      <strong>Modo Vista Previa</strong> — Los datos no serán enviados.
+    </div>
+
+    <!-- Progress -->
+    <div class="survey-progress">
+      <span class="survey-progress-label" id="survey-progress-label">Sección 1 de 8</span>
+      <div class="survey-progress-wrap">
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="survey-progress-bar" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step indicators -->
+    <div class="survey-steps" id="survey-steps"></div>
+
+    <!-- SURVEY CARD -->
+    <div class="survey-card">
+      <!-- Welcome message -->
+      <div id="survey-welcome" style="text-align:center; padding:12px 0 20px">
+        <h3 style="color:var(--color-primary); font-size:1.1rem; margin-bottom:8px">
+          Bienvenido/a a la Encuesta de Colaboradores Paracel
+        </h3>
+        <p style="color:var(--text-secondary); font-size:0.9rem; line-height:1.6">
+          Esta encuesta es <strong>confidencial y voluntaria</strong>. Sus respuestas nos ayudan a mejorar
+          las condiciones laborales y el bienestar de todos los colaboradores.
+        </p>
+        <p style="color:var(--text-muted); font-size:0.8rem; margin-top:8px">
+          ⏱️ Tiempo estimado: 15 a 20 minutos.
+        </p>
+        <hr style="border:none; border-top:1px solid var(--border); margin:16px 0">
+      </div>
+
+      <!-- Questions container -->
+      <div id="survey-form-container"></div>
+
+      <!-- Navigation -->
+      <div class="survey-nav">
+        <button class="btn btn-secondary" id="btn-prev" style="display:none">
+          ← Anterior
+        </button>
+        <div style="flex:1"></div>
+        <button class="btn btn-primary" id="btn-next">
+          Siguiente →
+        </button>
+        <button class="btn btn-primary" id="btn-submit" style="display:none">
+          ✅ Enviar Encuesta
+        </button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align:center; padding:24px 0; color:var(--text-muted); font-size:0.78rem">
+      Monitor de Impacto Social · Paracel S.A. · Datos confidenciales
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/js/questions.js"></script>
+<script src="assets/js/survey.js"></script>
+</body>
+</html>
