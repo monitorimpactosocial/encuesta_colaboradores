@@ -13,19 +13,25 @@ function getBootstrap(sessionToken) {
 
 function getDashboardSummary(sessionToken, editionId) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
-  var editionFilter = normalizeText_(editionId);
-  if (editionFilter) {
-    rows = rows.filter(function(r){ return normalizeText_(r.edicion) === editionFilter; });
+  var editionFilter = normalizeText_(editionId) || '';
+  var cacheKey = 'dash_summary_' + getDashboardCacheVersion_() + '_' + (editionFilter || 'ALL');
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return jsonParse_(cached, null) || {};
   }
+
   var allRows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var rows = editionFilter
+    ? allRows.filter(function(r){ return normalizeText_(r.edicion) === editionFilter; })
+    : allRows;
   var indirectos = rows.filter(function(r){ return r.tipo_colaborador === 'Indirecto'; });
   var directos   = rows.filter(function(r){ return r.tipo_colaborador === 'Directo'; });
-  var conIps     = rows.filter(function(r){ return upperKey_(r.descuento_ips_actual) === 'SI'; }).length;
+  var conIps     = rows.filter(function(r){ return isYesLike_(r.descuento_ips_actual); }).length;
   var edades     = rows.map(function(r){ return Number(r.edad); }).filter(function(n){ return !isNaN(n) && n >= 15 && n <= 80; });
   var edadProm   = edades.length ? Math.round(edades.reduce(function(a,b){return a+b;},0) / edades.length * 10) / 10 : 0;
 
-  return {
+  var summary = {
     edicionFiltro: editionFilter || '',
     edicionesDisponibles: countBy_(allRows, 'edicion').sort(function(a,b){ return a.label.localeCompare(b.label); }),
     total:      rows.length,
@@ -43,6 +49,9 @@ function getDashboardSummary(sessionToken, editionId) {
     porGrupoEdad:       sortGrupoEdad_(countBy_(rows, 'edad_grupo')),
     porEstadoCalidad:   countBy_(rows, 'estado_calidad')
   };
+
+  cache.put(cacheKey, jsonStringify_(summary), 180);
+  return summary;
 }
 
 function countBy_(rows, field) {
@@ -52,6 +61,23 @@ function countBy_(rows, field) {
     out[k] = (out[k] || 0) + 1;
   });
   return Object.keys(out).sort().map(function(k){ return { label: k, value: out[k] }; });
+}
+
+function isYesLike_(value) {
+  var v = normalizeText_(value);
+  if (!v) return false;
+  var low = v.toLowerCase();
+  if (low === 'si' || low === 'sí' || low === 'sÃ­' || low === 'yes' || low === 'true' || low === '1') return true;
+  var key = upperKey_(v).replace(/[^A-Z0-9]/g, '');
+  return key === 'SI' || key === 'YES' || key === 'TRUE' || key === '1';
+}
+
+function getDashboardCacheVersion_() {
+  return PropertiesService.getScriptProperties().getProperty('DASH_CACHE_VERSION') || '1';
+}
+
+function bumpDashboardCacheVersion_() {
+  PropertiesService.getScriptProperties().setProperty('DASH_CACHE_VERSION', String(Date.now()));
 }
 
 function sortSalario_(items) {
@@ -280,5 +306,6 @@ function rebuildAnalytics() {
   shL.clearContents();
   shL.getRange(1,1,1,longHeaders.length).setValues([longHeaders]);
   if (longRows.length) shL.getRange(2,1,longRows.length,longHeaders.length).setValues(longRows);
+  bumpDashboardCacheVersion_();
   return { ok: true, rows: responseRows.length, longRows: longRows.length };
 }
