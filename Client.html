@@ -1,0 +1,496 @@
+<script>
+(function(){
+  const state = {
+    sessionToken: localStorage.getItem('encuesta_colab_session') || '',
+    user: null,
+    bootstrap: null,
+    schema: null,
+    token: (window.SERVER_CONTEXT && window.SERVER_CONTEXT.token) || '',
+    surveyStartedAt: localStorage.getItem('encuesta_colab_started_at') || '',
+    activeTab: 'dashboard'
+  };
+
+  const app = document.getElementById('app');
+
+  function run(fn, ...args){
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(err => reject(err)).apply(null, [fn].concat(args));
+    });
+  }
+  function call(name, ...args){
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args);
+    });
+  }
+  function esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+  }
+  function statusBadge(v){
+    const t = String(v || '');
+    const cls = t === 'OK' || t === 'Abierta' || t === 'Usado' ? 'ok' : (t === 'Crítico' || t === 'Anulado' ? 'danger' : 'warn');
+    return `<span class="badge ${cls}">${esc(t)}</span>`;
+  }
+  function setSession(token, user){
+    state.sessionToken = token || '';
+    state.user = user || null;
+    localStorage.setItem('encuesta_colab_session', state.sessionToken);
+  }
+  function clearSession(){
+    state.sessionToken = '';
+    state.user = null;
+    localStorage.removeItem('encuesta_colab_session');
+  }
+
+  function init(){
+    if(state.token){
+      renderSurveyLoading();
+      call('markInvitationOpened', state.token).finally(loadSurveySchema);
+      return;
+    }
+    if(state.sessionToken){
+      loadBootstrap();
+    } else {
+      renderLogin();
+    }
+  }
+
+  function renderLogin(msg){
+    app.innerHTML = `
+      <div class="login-shell">
+        <div class="hero">
+          <h2>Encuesta de colaboradores</h2>
+          <p>Paracel S.A., backend Google Sheets, captura 2026, tablero y administración.</p>
+        </div>
+        <div class="card" style="margin-top:18px">
+          <h3>Ingreso al panel</h3>
+          <p class="muted">Administrador y visor. Los respondentes acceden mediante enlace único por correo.</p>
+          ${msg ? `<div class="notice" style="margin-bottom:12px">${esc(msg)}</div>` : ''}
+          <div class="form-grid">
+            <div class="full">
+              <label class="label">Usuario</label>
+              <input id="loginUser" class="input" autocomplete="username" value="">
+            </div>
+            <div class="full">
+              <label class="label">Contraseña</label>
+              <input id="loginPass" class="input" type="password" autocomplete="current-password" value="">
+            </div>
+            <div class="full row">
+              <button class="btn" id="btnLogin">Ingresar</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('btnLogin').onclick = async () => {
+      try{
+        const res = await call('login', document.getElementById('loginUser').value, document.getElementById('loginPass').value);
+        setSession(res.token, res.user);
+        loadBootstrap();
+      }catch(err){
+        renderLogin(err.message || 'No fue posible ingresar.');
+      }
+    };
+  }
+
+  async function loadBootstrap(){
+    app.innerHTML = `<div class="container"><div class="card">Cargando panel...</div></div>`;
+    try{
+      const bootstrap = await call('getBootstrap', state.sessionToken);
+      state.bootstrap = bootstrap;
+      state.user = bootstrap.user;
+      renderPanel();
+    }catch(err){
+      clearSession();
+      renderLogin(err.message || 'Sesión expirada.');
+    }
+  }
+
+  function renderPanel(){
+    const b = state.bootstrap;
+    app.innerHTML = `
+      <div class="topbar">
+        <div class="brand">
+          <h1>${esc(b.orgName)} · ${esc(b.appName)}</h1>
+          <div class="sub">Usuario: ${esc(b.user.displayName)} · Rol: ${esc(b.user.role)} · Edición activa: ${esc(b.activeEdition)}</div>
+        </div>
+        <div class="row">
+          ${b.user.role === 'admin' ? `<button class="btn secondary" id="btnRebuild">Recalcular base analítica</button>` : ''}
+          <button class="btn ghost" id="btnLogout">Salir</button>
+        </div>
+      </div>
+      <div class="container">
+        <div class="tabs" id="tabs"></div>
+        <div id="view"></div>
+      </div>`;
+    const tabs = [
+      {id:'dashboard', label:'Resumen'},
+      {id:'responses', label:'Respuestas'},
+      {id:'invitations', label:'Invitaciones'},
+      {id:'editions', label:'Ediciones'}
+    ];
+    if(b.user.role === 'admin'){
+      tabs.push({id:'users', label:'Usuarios'});
+      tabs.push({id:'config', label:'Configuración'});
+    }
+    document.getElementById('tabs').innerHTML = tabs.map(t => `<button class="tab ${state.activeTab===t.id?'active':''}" data-tab="${t.id}">${esc(t.label)}</button>`).join('');
+    [...document.querySelectorAll('.tab')].forEach(el => el.onclick = () => { state.activeTab = el.dataset.tab; renderPanel(); });
+    document.getElementById('btnLogout').onclick = async () => { try{ await call('logout', state.sessionToken); }catch(_){} clearSession(); renderLogin(); };
+    const rb = document.getElementById('btnRebuild');
+    if(rb) rb.onclick = async () => { rb.disabled = true; try{ await call('rebuildAnalytics'); await loadBootstrap(); } catch(err){ alert(err.message || err); rb.disabled = false; } };
+    renderCurrentTab();
+  }
+
+  function renderCurrentTab(){
+    const view = document.getElementById('view');
+    if(state.activeTab === 'dashboard') return renderDashboard(view);
+    if(state.activeTab === 'responses') return renderResponses(view);
+    if(state.activeTab === 'invitations') return renderInvitations(view);
+    if(state.activeTab === 'users') return renderUsers(view);
+    if(state.activeTab === 'config') return renderConfig(view);
+    if(state.activeTab === 'editions') return renderEditions(view);
+  }
+
+  function renderBars(items){
+    const max = Math.max(1, ...items.map(x => Number(x.value || 0)));
+    return `<div class="list-bars">${items.map(it => `
+      <div class="bar-item">
+        <div>${esc(it.label)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(100 * Number(it.value || 0) / max).toFixed(1)}%"></div></div>
+        <div style="text-align:right">${esc(it.value)}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  function renderDashboard(view){
+    const s = state.bootstrap.stats;
+    view.innerHTML = `
+      <div class="grid cols-2">
+        <div class="hero">
+          <h2>Panel operativo y analítico</h2>
+          <p>Base limpia para tablero, ediciones históricas, control de invitaciones y sincronización con Google Sheets.</p>
+        </div>
+        <div class="grid cols-4">
+          <div class="kpi"><div class="v">${esc(s.total)}</div><div class="l">Registros analíticos</div></div>
+          <div class="kpi"><div class="v">${esc(sumItems(s.porTipo))}</div><div class="l">Total clasificado</div></div>
+          <div class="kpi"><div class="v">${esc((s.porTipo.find(x=>x.label==='Indirecto')||{}).value || 0)}</div><div class="l">Indirectos</div></div>
+          <div class="kpi"><div class="v">${esc((s.porTipo.find(x=>x.label==='Directo')||{}).value || 0)}</div><div class="l">Directos</div></div>
+        </div>
+      </div>
+      <div class="grid cols-2" style="margin-top:18px">
+        <div class="card"><h3>Tipo de colaborador</h3>${renderBars(s.porTipo)}</div>
+        <div class="card"><h3>Sexo</h3>${renderBars(s.porSexo)}</div>
+        <div class="card"><h3>Área de indirectos</h3>${renderBars(s.porAreaIndirecto)}</div>
+        <div class="card"><h3>IPS actual</h3>${renderBars(s.porIpsActual)}</div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <h3>Departamento de residencia</h3>
+        ${renderBars(s.porDepartamentoResidencia.slice(0, 15))}
+      </div>`;
+  }
+
+  function sumItems(arr){ return (arr||[]).reduce((a,b)=>a+Number(b.value||0),0); }
+
+  async function renderResponses(view){
+    view.innerHTML = `<div class="card">Cargando respuestas...</div>`;
+    const rows = await call('listResponses', state.sessionToken, 150);
+    const headers = ['edicion','fecha_encuesta','tipo_colaborador','sexo','edad','departamento_residencia','empresa_contratista','salario_actual_banda','estado_calidad','n_flags','respondente_id','source_uuid'];
+    view.innerHTML = `
+      <div class="card">
+        <div class="spread">
+          <div><h3>Base analítica</h3><div class="muted">Vista anonimizada, últimos 150 registros.</div></div>
+          <div class="badge ok">${rows.length} filas</div>
+        </div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+            <tbody>${rows.map(r=>`<tr>${headers.map(h=>`<td>${h==='estado_calidad'?statusBadge(r[h]):esc(r[h])}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  async function renderInvitations(view){
+    view.innerHTML = `<div class="card">Cargando invitaciones...</div>`;
+    const rows = await call('listInvitations', state.sessionToken);
+    view.innerHTML = `
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Generar y enviar invitaciones</h3>
+          <div class="form-grid">
+            <div>
+              <label class="label">Edición</label>
+              <input class="input" id="invEdition" value="${esc(state.bootstrap.activeEdition)}">
+            </div>
+            <div>
+              <label class="label">Tipo de acceso</label>
+              <select class="select" id="invTipo"><option value="respondent">Respondent</option></select>
+            </div>
+            <div class="full">
+              <label class="label">Correos electrónicos</label>
+              <textarea class="textarea" id="invEmails" placeholder="correo1@dominio.com&#10;correo2@dominio.com"></textarea>
+            </div>
+            <div class="full row">
+              <button class="btn secondary" id="btnGenerateInv">Generar</button>
+              <button class="btn" id="btnSendInv">Generar y enviar</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Notas operativas</h3>
+          <ul>
+            <li>Los enlaces son únicos por persona y edición.</li>
+            <li>El respondente no requiere usuario ni contraseña.</li>
+            <li>La app bloquea reenvíos del mismo token una vez usado.</li>
+            <li>El panel permite reconstruir la base analítica luego de nuevas capturas.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="spread">
+          <div><h3>Historial de invitaciones</h3><div class="muted">Estado del canal de envío y uso del enlace.</div></div>
+          <div class="badge ok">${rows.length} registros</div>
+        </div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>Edición</th><th>Email</th><th>Estado</th><th>Enlace</th><th>Enviado</th><th>Usado</th></tr></thead>
+            <tbody>${rows.map(r=>`<tr>
+              <td>${esc(r.edition_id)}</td>
+              <td>${esc(r.email)}</td>
+              <td>${statusBadge(r.estado)}</td>
+              <td class="code">${esc(r.url_encuesta)}</td>
+              <td>${esc(r.sent_at)}</td>
+              <td>${esc(r.used_at)}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    document.getElementById('btnGenerateInv').onclick = async () => {
+      const data = { edition_id: document.getElementById('invEdition').value, tipo_acceso: document.getElementById('invTipo').value, emails: document.getElementById('invEmails').value };
+      await call('createInvitations', state.sessionToken, data);
+      renderInvitations(view);
+    };
+    document.getElementById('btnSendInv').onclick = async () => {
+      const data = { edition_id: document.getElementById('invEdition').value, tipo_acceso: document.getElementById('invTipo').value, emails: document.getElementById('invEmails').value };
+      await call('sendInvitations', state.sessionToken, data);
+      renderInvitations(view);
+    };
+  }
+
+  async function renderUsers(view){
+    view.innerHTML = `<div class="card">Cargando usuarios...</div>`;
+    const rows = await call('listUsers', state.sessionToken);
+    view.innerHTML = `
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Alta o actualización de usuario</h3>
+          <div class="form-grid">
+            <div><label class="label">Usuario</label><input class="input" id="uUser"></div>
+            <div><label class="label">Nombre visible</label><input class="input" id="uName"></div>
+            <div>
+              <label class="label">Rol</label>
+              <select class="select" id="uRole"><option value="viewer">viewer</option><option value="admin">admin</option></select>
+            </div>
+            <div><label class="label">Contraseña temporal</label><input class="input" id="uPass" type="password"></div>
+            <div><label class="label">Activo</label><select class="select" id="uActive"><option value="TRUE">TRUE</option><option value="FALSE">FALSE</option></select></div>
+            <div><label class="label">Forzar cambio</label><select class="select" id="uMust"><option value="TRUE">TRUE</option><option value="FALSE">FALSE</option></select></div>
+            <div class="full"><label class="label">Notas</label><input class="input" id="uNotes"></div>
+            <div class="full row"><button class="btn" id="btnSaveUser">Guardar</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Usuarios existentes</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Activo</th></tr></thead>
+              <tbody>${rows.map(r=>`<tr><td>${esc(r.username)}</td><td>${esc(r.display_name)}</td><td>${esc(r.role)}</td><td>${esc(r.active)}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('btnSaveUser').onclick = async () => {
+      await call('saveUser', state.sessionToken, {
+        username: document.getElementById('uUser').value,
+        display_name: document.getElementById('uName').value,
+        role: document.getElementById('uRole').value,
+        password_temporal: document.getElementById('uPass').value,
+        active: document.getElementById('uActive').value,
+        must_change_password: document.getElementById('uMust').value,
+        notes: document.getElementById('uNotes').value
+      });
+      renderUsers(view);
+    };
+  }
+
+  async function renderConfig(view){
+    const cfg = state.bootstrap.config || {};
+    view.innerHTML = `
+      <div class="card">
+        <h3>Configuración operativa</h3>
+        <div class="form-grid">
+          ${Object.keys(cfg).map(k => `<div><label class="label">${esc(k)}</label><input class="input cfg" data-key="${esc(k)}" value="${esc(cfg[k])}"></div>`).join('')}
+          <div class="full row"><button class="btn" id="btnSaveConfig">Guardar configuración</button></div>
+        </div>
+      </div>`;
+    document.getElementById('btnSaveConfig').onclick = async () => {
+      const pairs = [...document.querySelectorAll('.cfg')].map(el => ({ clave: el.dataset.key, valor: el.value }));
+      await call('updateConfig', state.sessionToken, pairs);
+      await loadBootstrap();
+    };
+  }
+
+  async function renderEditions(view){
+    const rows = await call('listEditions', state.sessionToken);
+    view.innerHTML = `
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Nueva edición o ajuste</h3>
+          <div class="form-grid">
+            <div><label class="label">ID edición</label><input class="input" id="eId" placeholder="2026"></div>
+            <div><label class="label">Nombre</label><input class="input" id="eName" placeholder="Edición 2026"></div>
+            <div><label class="label">Estado</label><select class="select" id="eStatus"><option>Abierta</option><option>Cerrada</option></select></div>
+            <div><label class="label">Inicio</label><input class="input" id="eStart" placeholder="2026-01-01"></div>
+            <div><label class="label">Fin</label><input class="input" id="eEnd" placeholder="2026-12-31"></div>
+            <div class="full"><label class="label">Notas</label><input class="input" id="eNotes"></div>
+            <div class="full row">${state.user.role==='admin'?'<button class="btn" id="btnSaveEdition">Guardar edición</button>':''}</div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Ediciones</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Inicio</th><th>Fin</th></tr></thead>
+              <tbody>${rows.map(r=>`<tr><td>${esc(r.edition_id)}</td><td>${esc(r.edition_name)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.start_date)}</td><td>${esc(r.end_date)}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>`;
+    const btn = document.getElementById('btnSaveEdition');
+    if(btn) btn.onclick = async () => {
+      await call('saveEdition', state.sessionToken, {
+        edition_id: document.getElementById('eId').value,
+        edition_name: document.getElementById('eName').value,
+        status: document.getElementById('eStatus').value,
+        start_date: document.getElementById('eStart').value,
+        end_date: document.getElementById('eEnd').value,
+        notes: document.getElementById('eNotes').value
+      });
+      await loadBootstrap();
+    };
+  }
+
+  function renderSurveyLoading(){
+    app.innerHTML = `<div class="survey-shell"><div class="card">Cargando cuestionario...</div></div>`;
+  }
+
+  async function loadSurveySchema(){
+    try{
+      state.schema = await call('getSurveySchema', state.token);
+      renderSurvey();
+    }catch(err){
+      app.innerHTML = `<div class="survey-shell"><div class="card"><h3>No fue posible abrir la encuesta</h3><p class="muted">${esc(err.message || err)}</p></div></div>`;
+    }
+  }
+
+  function renderSurvey(){
+    const draftKey = 'encuesta_colab_draft_' + state.token;
+    const draft = safeParse(localStorage.getItem(draftKey), {});
+    if(!state.surveyStartedAt){
+      state.surveyStartedAt = new Date().toISOString();
+      localStorage.setItem('encuesta_colab_started_at', state.surveyStartedAt);
+    }
+
+    app.innerHTML = `
+      <div class="survey-shell">
+        <div class="hero">
+          <h2>${esc(state.schema.editionId)} · Encuesta de colaboradores</h2>
+          <p>Acceso personalizado por enlace. Responda una sola vez. Sus datos serán tratados bajo control interno.</p>
+        </div>
+        <div class="card" style="margin-top:18px">
+          <div class="notice">Autoguardado activo en este navegador. Si cierra accidentalmente, podrá retomar desde el mismo enlace y dispositivo.</div>
+          <div id="surveyForm" style="margin-top:16px"></div>
+          <hr class="sep">
+          <div class="row">
+            <button class="btn" id="btnSubmitSurvey">Enviar encuesta</button>
+            <button class="btn secondary" id="btnResetDraft">Limpiar borrador local</button>
+          </div>
+        </div>
+      </div>`;
+
+    const host = document.getElementById('surveyForm');
+    host.innerHTML = state.schema.sections.map(section => `
+      <div class="card" style="margin-bottom:16px;background:var(--panel-2)">
+        <h3>${esc(section.label)}</h3>
+        <div class="form-grid">
+          ${section.questions.map(q => renderQuestion(q, draft)).join('')}
+        </div>
+      </div>`).join('');
+
+    function updateVisibility(){
+      const values = collectFormValues();
+      [...host.querySelectorAll('[data-visible-if]')].forEach(block => {
+        const rule = block.dataset.visibleIf || '';
+        block.classList.toggle('hidden', !evalVisible(rule, values));
+      });
+    }
+    host.addEventListener('input', () => {
+      const values = collectFormValues();
+      localStorage.setItem(draftKey, JSON.stringify(values));
+      updateVisibility();
+    });
+    updateVisibility();
+
+    document.getElementById('btnResetDraft').onclick = () => {
+      localStorage.removeItem(draftKey);
+      localStorage.removeItem('encuesta_colab_started_at');
+      loadSurveySchema();
+    };
+    document.getElementById('btnSubmitSurvey').onclick = async () => {
+      const btn = document.getElementById('btnSubmitSurvey');
+      btn.disabled = true;
+      try{
+        const payload = collectFormValues();
+        payload.__client_started_at = state.surveyStartedAt;
+        await call('submitSurvey', state.token, payload);
+        localStorage.removeItem(draftKey);
+        localStorage.removeItem('encuesta_colab_started_at');
+        app.innerHTML = `<div class="survey-shell"><div class="card"><h3>Encuesta registrada correctamente</h3><p class="muted">Gracias por completar el formulario.</p></div></div>`;
+      }catch(err){
+        alert(err.message || err);
+        btn.disabled = false;
+      }
+    };
+  }
+
+  function renderQuestion(q, draft){
+    const value = draft[q.field] || '';
+    const req = q.required ? ' *' : '';
+    let input = '';
+    if(q.type === 'select'){
+      input = `<select class="select" data-field="${esc(q.field)}"><option value=""></option>${q.options.map(o => `<option ${String(value)===String(o)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    } else if(q.type === 'select_or_text' || q.type === 'text_or_select'){
+      input = `<input list="list_${esc(q.field)}" class="input" data-field="${esc(q.field)}" value="${esc(value)}">
+      <datalist id="list_${esc(q.field)}">${q.options.map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist>`;
+    } else if(q.type === 'number'){
+      input = `<input class="input" type="number" data-field="${esc(q.field)}" value="${esc(value)}">`;
+    } else {
+      input = `<input class="input" data-field="${esc(q.field)}" value="${esc(value)}">`;
+    }
+    return `<div class="${q.type==='textarea'?'full':''}" data-visible-if="${esc(q.visibleIf||'')}">
+      <label class="label">${esc(q.label)}${req}</label>${input}
+    </div>`;
+  }
+
+  function evalVisible(rule, values){
+    if(!rule) return true;
+    const parts = rule.split('=');
+    if(parts.length !== 2) return true;
+    return String(values[parts[0]] || '') === parts[1];
+  }
+  function collectFormValues(){
+    const out = {};
+    [...document.querySelectorAll('[data-field]')].forEach(el => { out[el.dataset.field] = el.value; });
+    return out;
+  }
+  function safeParse(v, fallback){ try{return JSON.parse(v);}catch(e){return fallback;} }
+
+  init();
+})();
+</script>

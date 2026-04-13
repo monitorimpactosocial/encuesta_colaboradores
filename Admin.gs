@@ -1,0 +1,250 @@
+
+function getBootstrap(sessionToken) {
+  var user = requireRole_(sessionToken, ['admin','viewer']);
+  return {
+    appName: APP_CFG.APP_NAME,
+    orgName: APP_CFG.ORG_NAME,
+    user: user,
+    activeEdition: activeEdition_(),
+    config: getConfigMap_(),
+    stats: getDashboardSummary(sessionToken)
+  };
+}
+
+function getDashboardSummary(sessionToken) {
+  requireRole_(sessionToken, ['admin','viewer']);
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var summary = {
+    total: rows.length,
+    porEdicion: countBy_(rows, 'edicion'),
+    porTipo: countBy_(rows, 'tipo_colaborador'),
+    porSexo: countBy_(rows, 'sexo'),
+    porAreaIndirecto: countBy_(rows.filter(function(r){ return r.tipo_colaborador === 'Indirecto'; }), 'area_colaborador_indirecto'),
+    porDepartamentoResidencia: countBy_(rows, 'departamento_residencia'),
+    porIpsActual: countBy_(rows, 'descuento_ips_actual')
+  };
+  return summary;
+}
+
+function countBy_(rows, field) {
+  var out = {};
+  rows.forEach(function(r) {
+    var k = normalizeText_(r[field]) || '(vacío)';
+    out[k] = (out[k] || 0) + 1;
+  });
+  return Object.keys(out).sort().map(function(k){ return { label: k, value: out[k] }; });
+}
+
+function listResponses(sessionToken, limit) {
+  requireRole_(sessionToken, ['admin','viewer']);
+  limit = Number(limit || 200);
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  rows.sort(function(a,b){ return String(b.submission_ts).localeCompare(String(a.submission_ts)); });
+  return rows.slice(0, limit);
+}
+
+function listUsers(sessionToken) {
+  requireRole_(sessionToken, ['admin']);
+  return getRowsAsObjects_(APP_CFG.SHEETS.USERS).map(function(u){
+    return {
+      username: u.username,
+      display_name: u.display_name,
+      role: u.role,
+      active: u.active,
+      must_change_password: u.must_change_password,
+      notes: u.notes
+    };
+  });
+}
+
+function saveUser(sessionToken, userData) {
+  var actor = requireRole_(sessionToken, ['admin']);
+  var username = normalizeText_(userData.username).toLowerCase();
+  if (!username) throw new Error('username obligatorio');
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.USERS);
+  var existing = rows.filter(function(r){ return normalizeText_(r.username).toLowerCase() === username; })[0];
+
+  var record = existing ? existing : {
+    username: username,
+    display_name: '',
+    role: 'viewer',
+    password_hash: '',
+    password_temporal: '',
+    active: 'TRUE',
+    must_change_password: 'TRUE',
+    notes: ''
+  };
+
+  record.display_name = normalizeText_(userData.display_name) || username;
+  record.role = normalizeText_(userData.role) || 'viewer';
+  record.active = String(userData.active).toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE';
+  record.must_change_password = String(userData.must_change_password).toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE';
+  record.notes = normalizeText_(userData.notes);
+
+  var newPwd = normalizeText_(userData.password_temporal);
+  if (newPwd) {
+    record.password_hash = sha256Hex_(username + '|' + newPwd);
+    record.password_temporal = '';
+  }
+
+  if (existing) {
+    updateRowByNumber_(APP_CFG.SHEETS.USERS, existing.__rowNum, record);
+  } else {
+    appendObjectRow_(APP_CFG.SHEETS.USERS, record);
+  }
+  auditLog_(actor.username, actor.role, 'save_user', 'user', username, { role: record.role, active: record.active });
+  return { ok: true };
+}
+
+function listEditions(sessionToken) {
+  requireRole_(sessionToken, ['admin','viewer']);
+  return getRowsAsObjects_(APP_CFG.SHEETS.EDITIONS);
+}
+
+function saveEdition(sessionToken, editionData) {
+  var actor = requireRole_(sessionToken, ['admin']);
+  var id = normalizeText_(editionData.edition_id);
+  if (!id) throw new Error('edition_id obligatorio');
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.EDITIONS);
+  var existing = rows.filter(function(r){ return normalizeText_(r.edition_id) === id; })[0];
+  var record = existing ? existing : {};
+  record.edition_id = id;
+  record.edition_name = normalizeText_(editionData.edition_name) || ('Edición ' + id);
+  record.status = normalizeText_(editionData.status) || 'Cerrada';
+  record.start_date = normalizeText_(editionData.start_date);
+  record.end_date = normalizeText_(editionData.end_date);
+  record.notes = normalizeText_(editionData.notes);
+
+  if (existing) updateRowByNumber_(APP_CFG.SHEETS.EDITIONS, existing.__rowNum, record);
+  else appendObjectRow_(APP_CFG.SHEETS.EDITIONS, record);
+
+  if (record.status === 'Abierta') {
+    var cfgRows = getRowsAsObjects_(APP_CFG.SHEETS.CONFIG);
+    var activeRow = cfgRows.filter(function(r){ return r.clave === 'active_edition'; })[0];
+    if (activeRow) {
+      activeRow.valor = id;
+      updateRowByNumber_(APP_CFG.SHEETS.CONFIG, activeRow.__rowNum, activeRow);
+    }
+  }
+  auditLog_(actor.username, actor.role, 'save_edition', 'edition', id, record);
+  return { ok: true };
+}
+
+function listInvitations(sessionToken) {
+  requireRole_(sessionToken, ['admin','viewer']);
+  return getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
+}
+
+function createInvitations(sessionToken, data) {
+  var actor = requireRole_(sessionToken, ['admin']);
+  var editionId = normalizeText_(data.edition_id) || activeEdition_();
+  var emails = normalizeText_(data.emails).split(/[\n,;]+/).map(function(x){ return normalizeText_(x).toLowerCase(); }).filter(String);
+  var created = [];
+  emails.forEach(function(email) {
+    var token = sha256Hex_(email + '|' + editionId + '|' + uuid_()).slice(0, 32);
+    var url = getBaseUrl_() ? (getBaseUrl_() + '?token=' + encodeURIComponent(token)) : '';
+    var row = {
+      token: token,
+      edition_id: editionId,
+      email: email,
+      nombre_destinatario: '',
+      tipo_acceso: normalizeText_(data.tipo_acceso) || 'respondent',
+      estado: 'Generado',
+      url_encuesta: url,
+      sent_at: '',
+      opened_at: '',
+      used_at: '',
+      notes: normalizeText_(data.notes)
+    };
+    appendObjectRow_(APP_CFG.SHEETS.INVITATIONS, row);
+    created.push(row);
+  });
+  auditLog_(actor.username, actor.role, 'create_invitations', 'invitation', editionId, { total: created.length });
+  return created;
+}
+
+function sendInvitations(sessionToken, data) {
+  var actor = requireRole_(sessionToken, ['admin']);
+  var created = createInvitations(sessionToken, data);
+  created.forEach(function(inv) {
+    if (!inv.email) return;
+    var subject = '[' + APP_CFG.ORG_NAME + '] Encuesta de colaboradores ' + inv.edition_id;
+    var body = [
+      'Estimado/a colaborador/a,',
+      '',
+      'Le compartimos el enlace único para completar la encuesta:',
+      inv.url_encuesta || '(despliegue pendiente)',
+      '',
+      'Este enlace es personal y no debe reenviarse.',
+      '',
+      'Muchas gracias.'
+    ].join('\n');
+    MailApp.sendEmail(inv.email, subject, body);
+  });
+
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
+  rows.forEach(function(r) {
+    var match = created.filter(function(c){ return c.token === r.token; })[0];
+    if (match) {
+      r.sent_at = nowIso_();
+      r.estado = 'Enviado';
+      updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, r.__rowNum, r);
+    }
+  });
+  auditLog_(actor.username, actor.role, 'send_invitations', 'invitation', activeEdition_(), { total: created.length });
+  return { ok: true, total: created.length };
+}
+
+function updateConfig(sessionToken, pairs) {
+  var actor = requireRole_(sessionToken, ['admin']);
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.CONFIG);
+  var byKey = {};
+  rows.forEach(function(r){ byKey[r.clave] = r; });
+  (pairs || []).forEach(function(p) {
+    var key = normalizeText_(p.clave);
+    if (!key) return;
+    if (byKey[key]) {
+      byKey[key].valor = normalizeText_(p.valor);
+      byKey[key].descripcion = normalizeText_(p.descripcion || byKey[key].descripcion);
+      updateRowByNumber_(APP_CFG.SHEETS.CONFIG, byKey[key].__rowNum, byKey[key]);
+    } else {
+      appendObjectRow_(APP_CFG.SHEETS.CONFIG, {
+        clave: key,
+        valor: normalizeText_(p.valor),
+        descripcion: normalizeText_(p.descripcion)
+      });
+    }
+  });
+  auditLog_(actor.username, actor.role, 'update_config', 'config', '', { total: (pairs || []).length });
+  return { ok: true };
+}
+
+function rebuildAnalytics() {
+  var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
+  if (!responseRows.length) return { ok: true, rows: 0 };
+
+  var responseHeaders = getHeader_(getSheet_(APP_CFG.SHEETS.RESPONSES));
+  var analyticHeaders = responseHeaders.filter(function(h){ return APP_CFG.PII_FIELDS.indexOf(h) === -1; });
+  var analyticData = [analyticHeaders].concat(responseRows.map(function(r) {
+    return analyticHeaders.map(function(h){ return r[h]; });
+  }));
+  var shA = getSheet_(APP_CFG.SHEETS.ANALYTIC);
+  shA.clearContents();
+  shA.getRange(1,1,analyticData.length,analyticHeaders.length).setValues(analyticData);
+
+  var longHeaders = ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor'];
+  var longRows = [];
+  responseRows.forEach(function(r) {
+    APP_CFG.LONG_FIELDS.forEach(function(f) {
+      var value = r[f];
+      if (value !== '' && value !== null && value !== undefined) {
+        longRows.push([r.edicion, r.fecha_encuesta, r.respondente_id, r.source_uuid, f, value]);
+      }
+    });
+  });
+  var shL = getSheet_(APP_CFG.SHEETS.LONG);
+  shL.clearContents();
+  shL.getRange(1,1,1,longHeaders.length).setValues([longHeaders]);
+  if (longRows.length) shL.getRange(2,1,longRows.length,longHeaders.length).setValues(longRows);
+  return { ok: true, rows: responseRows.length, longRows: longRows.length };
+}

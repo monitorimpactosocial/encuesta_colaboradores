@@ -1,194 +1,128 @@
-# Encuesta de Colaboradores Paracel
-## Sistema de Gestión y Análisis · v2.0.0
+# Encuesta de Colaboradores PARACEL
 
-Aplicación web estática para la gestión, distribución y análisis de la Encuesta de Colaboradores de Paracel S.A. Soporta los años **2024, 2025 y 2026**.
+Aplicación web en **Google Apps Script** con backend en **Google Sheets**.
+Diseño basado en las mejores prácticas de `materialidadV2`: persistencia, control de edición, trazabilidad, cuestionario por metadatos, tokenización de respondentes y base analítica separada.
+
+## Recursos del proyecto
+
+| Recurso | URL / ID |
+|---------|----------|
+| Google Sheet (backend) | [Abrir Spreadsheet](https://docs.google.com/spreadsheets/d/1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c/edit) |
+| Spreadsheet ID | `1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c` |
+| Apps Script | [Abrir proyecto GAS](https://script.google.com/u/0/home/projects/create?parent=1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c) |
+
+## Credenciales iniciales
+
+| Usuario | Contraseña | Rol |
+|---------|-----------|-----|
+| `diego` | `456` | Administrador |
+| `user`  | `123` | Visualizador |
+
+> Las contraseñas se hashean con SHA-256 al ejecutar `setupBackend()`. Cambiarlas después del primer despliegue.
 
 ---
 
-## Acceso
-
-| Usuario    | Contraseña | Rol           |
-|------------|-----------|---------------|
-| `diego`    | `456`     | Administrador |
-| `user`     | `123`     | Visualizador  |
-
----
-
-## Estructura del proyecto
+## Estructura del repositorio
 
 ```
-encuesta_colaboradores/
-├── index.html              # Aplicación principal (dashboard + admin)
-├── encuesta.html           # Formulario público para colaboradores
-├── assets/
-│   ├── css/styles.css      # Estilos (tema verde oscuro)
-│   └── js/
-│       ├── app.js          # Lógica principal (auth, dashboard, tablas, modales)
-│       ├── questions.js    # Definición completa del cuestionario (8 secciones, 70 preguntas)
-│       └── survey.js       # Lógica del formulario público
+├── appsscript.json      # Manifiesto GAS (zona horaria, permisos)
+├── App.gs               # doGet: punto de entrada de la web app
+├── Auth.gs              # Login, sesiones con token, logout
+├── Config.gs            # Constantes, nombres de hojas, acceso al Spreadsheet
+├── Utils.gs             # Utilidades: UUID, hash, normalización, CRUD genérico
+├── Setup.gs             # setupBackend(): crea hojas, cabeceras, hashea usuarios
+├── Admin.gs             # Panel admin: dashboard, respuestas, usuarios, invitaciones, config
+├── Survey.gs            # Encuesta: schema, submit, flags de calidad, base analítica
+├── Index.html           # Plantilla HTML (punto de entrada del frontend)
+├── Styles.html          # CSS (incluido por Index.html)
+├── Client.html          # SPA JavaScript (incluido por Index.html)
+├── .clasp.example.json  # Plantilla para configurar clasp
 ├── data/
-│   └── ENCUESTA_COLABORADORES_LIMPIA_2025.csv  # Base limpia 2025 (987 registros)
-└── README.md
+│   └── ENCUESTA_COLABORADORES_LIMPIA_2025.csv   # 987 registros limpios 2025
+└── docs/
+    └── arquitectura.md  # Descripción de la arquitectura
 ```
+
+---
+
+## Hojas del Spreadsheet backend
+
+| Hoja | Propósito |
+|------|-----------|
+| `CONFIG` | Parámetros clave-valor (edición activa, etc.) |
+| `EDICIONES` | Control de ediciones 2024, 2025, 2026 |
+| `USUARIOS` | Usuarios del panel con hash de contraseña |
+| `CUESTIONARIO` | Definición de secciones y preguntas (metadatos) |
+| `CATALOGOS` | Catálogos de opciones (departamentos, empresas, etc.) |
+| `RESPUESTAS` | Base operativa wide con todos los campos y flags |
+| `BASE_ANALITICA` | Versión anonimizada (sin PII) para dashboard |
+| `RESPUESTAS_LONG` | Formato long para Looker Studio y tablas dinámicas |
+| `INVITACIONES` | Tokens únicos: estado de envío y uso |
+| `AUDITORIA` | Trazabilidad de todas las acciones |
+
+---
+
+## Despliegue paso a paso
+
+### 1. Preparar el Spreadsheet
+
+El archivo `paracel_colaboradores_backend_seed.xlsx` (incluido en el paquete de implementación) contiene la estructura base con datos 2025 ya cargados. Súbalo a Google Drive y conviértalo a Google Sheets, **o use el spreadsheet existente** con ID `1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c`.
+
+### 2. Crear el proyecto Apps Script
+
+Opción A — **Editor web** (recomendado):
+1. Abra el [editor de Apps Script](https://script.google.com/u/0/home/projects/create?parent=1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c)
+2. Elimine el código de ejemplo
+3. Cree un archivo por cada `.gs` de este repositorio
+4. Copie el contenido de cada archivo
+5. Cree los archivos HTML: `Index`, `Styles`, `Client` (sin extensión en GAS)
+
+Opción B — **clasp** (para desarrollo):
+```bash
+npm install -g @google/clasp
+clasp login
+# Copiar .clasp.example.json → .clasp.json y poner el scriptId real
+clasp push
+```
+
+### 3. Configurar el backend
+
+En el editor de Apps Script, ejecute **una sola vez**:
+```javascript
+setupBackend("1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c")
+```
+Esto crea todas las hojas, cabeceras, y hashea las contraseñas iniciales.
+
+### 4. Desplegar como Web App
+
+1. **Implementar → Nueva implementación**
+2. Tipo: **Aplicación web**
+3. Ejecutar como: **Yo (su cuenta)**
+4. Quién tiene acceso: **Cualquier usuario**
+5. Copiar la URL generada → es la URL pública de la app
+
+### 5. Cargar datos históricos 2025
+
+En el Spreadsheet, en la hoja `RESPUESTAS`, importe el archivo:
+`data/ENCUESTA_COLABORADORES_LIMPIA_2025.csv`
+
+Luego desde el panel admin ejecute **"Recalcular base analítica"** para poblar `BASE_ANALITICA` y `RESPUESTAS_LONG`.
 
 ---
 
 ## Funcionalidades
 
-### Dashboard
-- KPIs: total encuestados, % hombres/mujeres, directo/indirecto, edad promedio, IPS, área urbana
-- 10 gráficos: sexo, tipo, área, edad, IPS, combustible, departamentos, salario, empresas, timeline
-- Selector de año (2024/2025/2026)
-- Botón de sincronización con Google Sheets
-
-### Respuestas
-- Tabla completa con búsqueda y filtros (tipo, sexo, área)
-- Paginación (20 por página)
-- Exportar a CSV
-
-### Cuestionario (encuesta.html)
-- 8 secciones, 70 preguntas
-- Formulario multi-paso con barra de progreso
-- Preguntas condicionales (se muestran según respuestas anteriores)
-- Guardado automático de borrador
-- Envío a Google Apps Script
-
-### Colaboradores (admin)
-- Lista de personas a encuestar
-- Importar lista desde CSV (`ci, nombre, email, telefono, tipo, empresa`)
-- Generar enlace único por persona
-- Estado: Pendiente / Enviado / Completado
-
-### Envío Masivo (admin)
-- Plantilla de correo personalizable con variables `{{nombre}}`, `{{year}}`, `{{link}}`
-- Vista previa del correo
-- Envío a todos los pendientes (abre cliente de correo)
-- Envío individual con enlace personalizado
-
-### Usuarios (admin)
-- Agregar/editar/eliminar usuarios
-- Roles: Administrador / Visualizador
-
-### Configuración (admin)
-- URLs de Google Sheets por año
-- URL de Google Apps Script
-- Configuración de correo
-- Exportar/importar respaldo JSON
-
----
-
-## Integración con Google Sheets
-
-### Paso 1: Preparar el Spreadsheet
-
-Cree un Google Spreadsheet con pestañas: `2024`, `2025`, `2026`, `Colaboradores`.
-
-Suba la base limpia `ENCUESTA_COLABORADORES_LIMPIA_2025.csv` a la pestaña `2025`.
-
-### Paso 2: Publicar como CSV
-
-Para conectar el dashboard:
-1. Archivo → Publicar en la web
-2. Seleccione la pestaña del año (ej: `2025`)
-3. Formato: `Valores separados por comas (.csv)`
-4. Copie la URL generada
-5. Péguelo en Configuración → URL hoja 2025
-
-### Paso 3: Configurar Apps Script (para recibir respuestas 2026)
-
-1. En el Spreadsheet: Extensiones → Apps Script
-2. Pegue este código:
-
-```javascript
-function doPost(e) {
-  try {
-    var data = JSON.parse(e.postData.contents);
-    var year = data.year || '2026';
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(year);
-    if (!sheet) sheet = ss.insertSheet(year);
-
-    // Crear cabecera si la hoja está vacía
-    if (sheet.getLastRow() === 0) {
-      var headers = Object.keys(data).filter(k => !k.startsWith('_'));
-      sheet.appendRow(headers);
-    }
-
-    // Agregar fila con valores
-    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var row = headers.map(h => data[h] !== undefined ? data[h] : '');
-    sheet.appendRow(row);
-
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-function doGet(e) {
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok', message: 'Apps Script activo' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-```
-
-3. Implementar → Nueva implementación → Aplicación web
-4. Acceso: **Cualquier persona**
-5. Copie la URL y péguelo en Configuración → URL del Apps Script
-
----
-
-## Despliegue en GitHub Pages
-
-```bash
-# En el directorio del proyecto:
-git init
-git add .
-git commit -m "Initial release - Encuesta Colaboradores Paracel v2.0.0"
-git branch -M main
-git remote add origin https://github.com/monitorimpactosocial/encuesta_colaboradores.git
-git push -u origin main
-```
-
-Luego en GitHub: Settings → Pages → Source: main → / (root) → Save.
-
-**URL de la app**: `https://monitorimpactosocial.github.io/encuesta_colaboradores/`
-
----
-
-## Enlace de encuesta para colaborador
-
-Formato del enlace enviado por correo:
-```
-https://monitorimpactosocial.github.io/encuesta_colaboradores/encuesta.html?token=XXXXX
-```
-
-El token codifica `id:ci:year` en base64. Al abrirlo:
-- El formulario se pre-rellena con los datos básicos del colaborador
-- Al enviar, los datos van al Apps Script → Google Sheets
-- El estado del colaborador cambia a "Completado"
-
----
-
-## Datos limpios 2025
-
-**Archivo**: `data/ENCUESTA_COLABORADORES_LIMPIA_2025.csv`
-
-**Limpieza aplicada**:
-- 987 registros, 31 columnas de datos válidos
-- Normalización de nombres de empresas (81 → ~60 entidades únicas)
-- Normalización de cargos (case-insensitive, variantes consolidadas)
-- Normalización de sexo, tipo de colaborador, área de residencia
-- Normalización de comunidad indígena (Sí/No)
-- Formato estándar de fechas (YYYY-MM-DD)
-- Cédulas como texto (sin decimales)
-- Edades como enteros
-
-**Empresas corregidas** (principales): `JM CONSTRUCTORA` → `CONSTRUCTORA JM`, `PROSEGUR SECURITY` → `PROSEGUR`, `PLAN SUR` → `PLANSUR`, `OAC MAQUINARIA` → `OAC MAQUINARIAS`, y otras.
+- **Login** con hash SHA-256 y sesión por token (12 h)
+- **Dashboard** con KPIs y barras horizontales desde `BASE_ANALITICA`
+- **Respuestas** (últimos 150, anonimizados)
+- **Invitaciones** — genera tokens únicos y envía correos con `MailApp`
+- **Ediciones** — gestión de años 2024, 2025, 2026
+- **Usuarios** — CRUD con hash de contraseña
+- **Configuración** — pares clave-valor en hoja `CONFIG`
+- **Encuesta** — formulario por enlace único tokenizado, autoguardado local, visibilidad condicional
+- **Flags de calidad** — 11 banderas automáticas por registro (n_flags, estado_calidad)
+- **Base long** — reconstrucción automática en `RESPUESTAS_LONG`
+- **Auditoría** — log de login, submit, administración en hoja `AUDITORIA`
 
 ---
 

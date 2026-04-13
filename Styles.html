@@ -1,0 +1,96 @@
+<style>
+:root{
+  --bg:#f4f7f8;
+  --panel:#ffffff;
+  --panel-2:#f8fbfb;
+  --ink:#15313b;
+  --muted:#637984;
+  --line:#d9e4e7;
+  --brand:#0f766e;
+  --brand-2:#14b8a6;
+  --danger:#b91c1c;
+  --warn:#b45309;
+  --ok:#166534;
+  --shadow:0 10px 28px rgba(15, 23, 42, .08);
+  --radius:18px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:linear-gradient(180deg,#eef7f6 0,#f4f7f8 180px);
+  color:var(--ink);
+  font:14px/1.45 Inter,Segoe UI,Arial,sans-serif;
+}
+a{color:var(--brand)}
+.container{max-width:1280px;margin:0 auto;padding:24px}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;gap:16px;
+  padding:18px 24px;background:rgba(255,255,255,.92);backdrop-filter: blur(8px);
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10
+}
+.brand h1{margin:0;font-size:20px}
+.brand .sub{color:var(--muted);font-size:12px}
+.grid{display:grid;gap:18px}
+.grid.cols-2{grid-template-columns:1.2fr .8fr}
+.grid.cols-4{grid-template-columns:repeat(4,1fr)}
+.card{
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow); padding:18px;
+}
+.card h2,.card h3{margin:0 0 10px}
+.muted{color:var(--muted)}
+.kpi{padding:16px;border-radius:16px;background:linear-gradient(135deg,#0f766e,#134e4a);color:#fff}
+.kpi .v{font-size:30px;font-weight:700}
+.kpi .l{font-size:12px;opacity:.86}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.btn{
+  appearance:none;border:none;border-radius:12px;padding:10px 14px;cursor:pointer;
+  background:var(--brand);color:#fff;font-weight:600;box-shadow:none
+}
+.btn.secondary{background:#e7f7f5;color:#0f5d56;border:1px solid #b9ece5}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:var(--danger)}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.input,.select,.textarea{
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;
+  color:var(--ink)
+}
+.textarea{min-height:84px;resize:vertical}
+.label{display:block;margin-bottom:6px;font-size:12px;color:var(--muted);font-weight:600}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.form-grid .full{grid-column:1/-1}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.tab{padding:10px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer}
+.tab.active{background:#dff7f3;border-color:#86ddd2;color:#0f5d56;font-weight:700}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}
+table{width:100%;border-collapse:collapse;background:#fff}
+th,td{padding:10px 12px;border-bottom:1px solid #edf2f3;text-align:left;white-space:nowrap;vertical-align:top}
+th{position:sticky;top:0;background:#f8fbfb;font-size:12px;color:#48606b}
+.badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.badge.ok{background:#dcfce7;color:#166534}
+.badge.warn{background:#fef3c7;color:#92400e}
+.badge.danger{background:#fee2e2;color:#991b1b}
+.hero{
+  padding:28px;border-radius:24px;background:
+    radial-gradient(circle at top right, rgba(20,184,166,.20), transparent 32%),
+    linear-gradient(135deg, #0f766e, #0b4f4a);
+  color:#fff; box-shadow:var(--shadow)
+}
+.hero h2{margin:0 0 8px;font-size:28px}
+.hero p{margin:0;color:rgba(255,255,255,.92)}
+.list-bars{display:grid;gap:8px}
+.bar-item{display:grid;grid-template-columns:180px 1fr 52px;gap:10px;align-items:center}
+.bar-track{height:10px;border-radius:999px;background:#edf2f3;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,#0f766e,#14b8a6)}
+.login-shell{max-width:460px;margin:64px auto}
+.survey-shell{max-width:980px;margin:0 auto;padding:24px}
+.notice{padding:12px 14px;border-radius:12px;background:#eefbf8;border:1px solid #c8f0e8;color:#0f5d56}
+.hidden{display:none !important}
+hr.sep{border:none;border-top:1px solid var(--line);margin:16px 0}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+@media (max-width:960px){
+  .grid.cols-2,.grid.cols-4,.form-grid{grid-template-columns:1fr}
+  .bar-item{grid-template-columns:1fr}
+}
+</style>

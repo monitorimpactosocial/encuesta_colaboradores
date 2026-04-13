@@ -1,0 +1,38 @@
+
+var APP_CFG = {
+  APP_NAME: 'Encuesta de colaboradores',
+  ORG_NAME: 'Paracel S.A.',
+  SHEETS: {
+    CONFIG: 'CONFIG',
+    USERS: 'USUARIOS',
+    EDITIONS: 'EDICIONES',
+    QUESTIONNAIRE: 'CUESTIONARIO',
+    CATALOGS: 'CATALOGOS',
+    RESPONSES: 'RESPUESTAS',
+    ANALYTIC: 'BASE_ANALITICA',
+    LONG: 'RESPUESTAS_LONG',
+    INVITATIONS: 'INVITACIONES',
+    AUDIT: 'AUDITORIA'
+  },
+  SESSION_HOURS: 12,
+  TOKEN_HOURS: 24 * 30,
+  PII_FIELDS: ['nombre_completo', 'nombre_completo_raw', 'cedula', 'cedula_raw'],
+  LONG_FIELDS: [
+    'tipo_colaborador','area_colaborador_indirecto','cargo','sexo','edad','edad_grupo',
+    'departamento_procedencia','pais_origen','distrito_procedencia','localidad_procedencia',
+    'departamento_residencia','distrito_residencia','localidad_residencia','area_residencia',
+    'pertenece_comunidad_indigena','etnia','combustible_cocina','trabajaba_antes_paracel',
+    'salario_anterior_banda','descuento_ips_anterior','salario_actual_banda','descuento_ips_actual',
+    'empresa_contratista'
+  ]
+};
+
+function getBackendSpreadsheet_() {
+  var id = PropertiesService.getScriptProperties().getProperty('BACKEND_SPREADSHEET_ID');
+  if (!id) throw new Error('BACKEND_SPREADSHEET_ID no configurado. Ejecute setupBackend(spreadsheetId).');
+  return SpreadsheetApp.openById(id);
+}
+
+function getBaseUrl_() {
+  return ScriptApp.getService().getUrl() || '';
+}

@@ -1,8 +1,12 @@
-# Original data files (not for repo)
+# clasp credentials (nunca commitear)
+.clasprc.json
+.clasp.json
+
+# Archivos de datos pesados
 *.xlsx
 ENCUESTA_COLABORADORES_LIMPIA_2025.csv
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 
