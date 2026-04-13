@@ -1,29 +1,41 @@
 
 function getBootstrap(sessionToken) {
   var user = requireRole_(sessionToken, ['admin','viewer']);
+  // Stats se cargan por separado (getDashboardSummary) para no bloquear el panel
   return {
     appName: APP_CFG.APP_NAME,
     orgName: APP_CFG.ORG_NAME,
     user: user,
     activeEdition: activeEdition_(),
-    config: getConfigMap_(),
-    stats: getDashboardSummary(sessionToken)
+    config: getConfigMap_()
   };
 }
 
 function getDashboardSummary(sessionToken) {
   requireRole_(sessionToken, ['admin','viewer']);
   var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
-  var summary = {
-    total: rows.length,
-    porEdicion: countBy_(rows, 'edicion'),
-    porTipo: countBy_(rows, 'tipo_colaborador'),
-    porSexo: countBy_(rows, 'sexo'),
-    porAreaIndirecto: countBy_(rows.filter(function(r){ return r.tipo_colaborador === 'Indirecto'; }), 'area_colaborador_indirecto'),
-    porDepartamentoResidencia: countBy_(rows, 'departamento_residencia'),
-    porIpsActual: countBy_(rows, 'descuento_ips_actual')
+  var indirectos = rows.filter(function(r){ return r.tipo_colaborador === 'Indirecto'; });
+  var directos   = rows.filter(function(r){ return r.tipo_colaborador === 'Directo'; });
+  var conIps     = rows.filter(function(r){ return normalizeText_(r.descuento_ips_actual) === 'sí'; }).length;
+  var edades     = rows.map(function(r){ return Number(r.edad); }).filter(function(n){ return !isNaN(n) && n >= 15 && n <= 80; });
+  var edadProm   = edades.length ? Math.round(edades.reduce(function(a,b){return a+b;},0) / edades.length * 10) / 10 : 0;
+
+  return {
+    total:      rows.length,
+    directos:   directos.length,
+    indirectos: indirectos.length,
+    conIpsPct:  rows.length ? Math.round(conIps * 100 / rows.length) : 0,
+    edadProm:   edadProm,
+    porEdicion:    countBy_(rows, 'edicion').sort(function(a,b){ return a.label.localeCompare(b.label); }),
+    porTipo:       countBy_(rows, 'tipo_colaborador'),
+    porSexo:       countBy_(rows, 'sexo'),
+    porAreaIndirecto:   countBy_(indirectos, 'area_colaborador_indirecto'),
+    porDeptResidencia:  countBy_(rows, 'departamento_residencia').sort(function(a,b){ return b.value-a.value; }).slice(0,15),
+    porIpsActual:       countBy_(rows, 'descuento_ips_actual'),
+    porSalario:         sortSalario_(countBy_(rows, 'salario_actual_banda')),
+    porGrupoEdad:       sortGrupoEdad_(countBy_(rows, 'edad_grupo')),
+    porEstadoCalidad:   countBy_(rows, 'estado_calidad')
   };
-  return summary;
 }
 
 function countBy_(rows, field) {
@@ -33,6 +45,21 @@ function countBy_(rows, field) {
     out[k] = (out[k] || 0) + 1;
   });
   return Object.keys(out).sort().map(function(k){ return { label: k, value: out[k] }; });
+}
+
+function sortSalario_(items) {
+  var ord = {'menos del salario mínimo':1,'salario mínimo':2,
+    'más del salario mínimo y hasta 3 millones':3,'más de 3 millones y hasta 5 millones':4,
+    'más de 5 millones y hasta 7 millones':5,'más de 7 millones y hasta 10 millones':6,
+    'más de 10 millones y hasta 13 millones':7,'más de 13 millones y hasta 15 millones':8,
+    'más de 15 millones y hasta 20 millones':9,'más de 20 millones y hasta 30 millones':10,
+    'más de 30 millones':11,'no informa':99};
+  return items.sort(function(a,b){ return (ord[a.label.toLowerCase()]||50)-(ord[b.label.toLowerCase()]||50); });
+}
+
+function sortGrupoEdad_(items) {
+  var ord = {'18-24':1,'25-34':2,'35-44':3,'45-54':4,'55-64':5,'65+':6};
+  return items.sort(function(a,b){ return (ord[a.label]||99)-(ord[b.label]||99); });
 }
 
 function listResponses(sessionToken, limit) {
