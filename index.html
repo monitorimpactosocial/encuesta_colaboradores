@@ -1,17 +1,55 @@
-<!DOCTYPE html>
-<html>
+﻿<!doctype html>
+<html lang="es">
   <head>
-    <base target="_top">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Encuesta de colaboradores</title>
-    <?!= include('Styles'); ?>
+    <title>Encuesta de Colaboradores - Paracel</title>
+    <meta name="description" content="Portal de acceso a la aplicación de Encuesta de Colaboradores de Paracel.">
+    <style>
+      body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #f3f8f7; color: #11343a; }
+      .wrap { max-width: 760px; margin: 56px auto; padding: 0 20px; }
+      .card { background: #fff; border: 1px solid #d8e8e5; border-radius: 18px; padding: 24px; box-shadow: 0 6px 28px rgba(16,120,111,.10); }
+      h1 { margin: 0 0 10px; font-size: 28px; }
+      p { line-height: 1.55; margin: 0 0 12px; }
+      .muted { color: #4a6a72; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+      .btn { display: inline-block; text-decoration: none; border-radius: 10px; padding: 10px 14px; font-weight: 600; border: 1px solid #127a72; background: #127a72; color: #fff; }
+      .btn.alt { background: #fff; color: #127a72; }
+      code { background: #edf5f3; padding: 2px 6px; border-radius: 6px; }
+    </style>
   </head>
   <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Encuesta de Colaboradores</h1>
+        <p class="muted">Esta URL en GitHub Pages es solo una portada. La aplicación operativa corre en Google Apps Script.</p>
+        <p>Para abrir el sistema completo (login, dashboard e invitaciones), use la URL de despliegue <code>.../exec</code> de Apps Script.</p>
+        <div class="row">
+          <a id="openGas" class="btn" href="#" aria-disabled="true">Abrir aplicación (GAS)</a>
+          <a class="btn alt" href="./README.md">Ver README</a>
+        </div>
+        <p id="hint" class="muted" style="margin-top:14px">Puede pasar la URL de GAS con <code>?gas=https://script.google.com/.../exec</code>.</p>
+      </div>
+    </div>
+
     <script>
-      window.SERVER_CONTEXT = <?= serverContext ?>;
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var gas = params.get('gas') || localStorage.getItem('encuesta_colab_gas_url') || '';
+        var btn = document.getElementById('openGas');
+        var hint = document.getElementById('hint');
+
+        if (gas && /^https:\/\/script\.google\.com\//.test(gas)) {
+          localStorage.setItem('encuesta_colab_gas_url', gas);
+          btn.href = gas;
+          btn.removeAttribute('aria-disabled');
+          hint.textContent = 'URL de Google Apps Script detectada y guardada en este navegador.';
+          return;
+        }
+
+        btn.style.opacity = '.55';
+        btn.style.pointerEvents = 'none';
+      })();
     </script>
-    <div id="app"></div>
-    <?!= include('Client'); ?>
   </body>
 </html>

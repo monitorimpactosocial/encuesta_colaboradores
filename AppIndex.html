@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Encuesta de colaboradores · Paracel</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <script>
+      window.SERVER_CONTEXT = <?= serverContext ?>;
+    </script>
+    <div id="app"></div>
+    <?!= include('Client'); ?>
+  </body>
+</html>
