@@ -100,7 +100,16 @@ function listResponses(sessionToken, limit) {
   limit = Number(limit || 200);
   var rows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
   rows.sort(function(a,b){ return String(b.submission_ts).localeCompare(String(a.submission_ts)); });
-  return rows.slice(0, limit);
+  var fields = [
+    'edicion','fecha_encuesta','tipo_colaborador','sexo','edad',
+    'departamento_residencia','salario_actual_banda','descuento_ips_actual',
+    'empresa_contratista','estado_calidad','n_flags','respondente_id'
+  ];
+  return rows.slice(0, limit).map(function(r){
+    var out = {};
+    fields.forEach(function(f){ out[f] = r[f]; });
+    return out;
+  });
 }
 
 function listUsers(sessionToken) {
@@ -190,9 +199,19 @@ function saveEdition(sessionToken, editionData) {
   return { ok: true };
 }
 
-function listInvitations(sessionToken) {
+function listInvitations(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
-  return getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
+  limit = Number(limit || 500);
+  var rows = getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
+  rows.sort(function(a,b){
+    return String(b.sent_at || b.opened_at || b.used_at || '').localeCompare(String(a.sent_at || a.opened_at || a.used_at || ''));
+  });
+  var fields = ['edition_id','email','estado','sent_at','opened_at','used_at','url_encuesta','token'];
+  return rows.slice(0, limit).map(function(r){
+    var out = {};
+    fields.forEach(function(f){ out[f] = r[f]; });
+    return out;
+  });
 }
 
 function createInvitations(sessionToken, data) {

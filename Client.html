@@ -399,7 +399,7 @@ async function renderResponses(view){
 /* ── INVITACIONES ──────────────────────────────────── */
 async function renderInvitations(view){
   view.innerHTML=`<div class="card"><p class="muted">Cargando...</p></div>`;
-  const rows=await call('listInvitations',state.sessionToken);
+  const rows=await call('listInvitations',state.sessionToken,500);
 
   // Conteos rápidos
   const cnt={generado:0,enviado:0,abierto:0,usado:0,total:rows.length};
