@@ -119,8 +119,17 @@ function listResponses(sessionToken, limit) {
  * La deduplicacion se hace por source_uuid y fallback por (edicion|respondente_id|fecha_encuesta).
  */
 function getCombinedAnalyticRows_() {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'combined_analytic_' + getDashboardCacheVersion_();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return jsonParse_(cached, []) || [];
+  }
+
   var snapRows = getEmbeddedSnapshotRows_();
-  var liveRows = getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+  var liveRows = snapRows.length
+    ? getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, getLiveTailLimit_())
+    : getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
   var out = [];
   var seen = {};
 
@@ -139,7 +148,35 @@ function getCombinedAnalyticRows_() {
 
   snapRows.forEach(addRow);
   liveRows.forEach(addRow);
+  cache.put(cacheKey, jsonStringify_(out), 120);
   return out;
+}
+
+function getLiveTailLimit_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('LIVE_TAIL_LIMIT');
+  var n = Number(raw);
+  return (!isNaN(n) && n > 0) ? n : 2500;
+}
+
+function getRecentRowsAsObjects_(sheetName, limit) {
+  var sh = getSheet_(sheetName);
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+
+  var headers = getHeader_(sh);
+  var dataRows = lastRow - 1;
+  var take = Math.min(Math.max(Number(limit || dataRows), 1), dataRows);
+  var startRow = lastRow - take + 1;
+  var values = sh.getRange(startRow, 1, take, headers.length).getValues();
+
+  return values.filter(function(row) {
+    return row.join('') !== '';
+  }).map(function(row, idx) {
+    var obj = {};
+    headers.forEach(function(h, i) { obj[h] = row[i]; });
+    obj.__rowNum = startRow + idx;
+    return obj;
+  });
 }
 
 /**
