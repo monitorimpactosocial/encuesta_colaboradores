@@ -4,7 +4,10 @@ function getSurveySchema(token) {
   if (token && !invitation) throw new Error('Token inválido.');
   if (invitation && invitation.estado === 'Usado') throw new Error('El enlace ya fue utilizado.');
   if (invitation && invitation.estado === 'Anulado') throw new Error('El enlace fue anulado.');
+  return getSurveySchemaFromInvitation_(invitation);
+}
 
+function getSurveySchemaFromInvitation_(invitation) {
   var rows = getRowsAsObjects_(APP_CFG.SHEETS.QUESTIONNAIRE)
     .sort(function(a, b) { return Number(a.question_order) - Number(b.question_order); });
 
@@ -56,8 +59,25 @@ function buildClientCatalogs_() {
 function getInvitationByToken_(token) {
   token = normalizeText_(token);
   if (!token) return null;
-  var rows = getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
-  return rows.filter(function(r) { return normalizeText_(r.token) === token; })[0] || null;
+  var sh = getSheet_(APP_CFG.SHEETS.INVITATIONS);
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+
+  var headers = getHeader_(sh);
+  var tokenCol = headers.indexOf('token') + 1;
+  if (tokenCol < 1) throw new Error('Hoja INVITACIONES sin columna token.');
+
+  var finder = sh.getRange(2, tokenCol, lastRow - 1, 1)
+    .createTextFinder(token)
+    .matchEntireCell(true);
+  var cell = finder.findNext();
+  if (!cell) return null;
+  var rowNum = cell.getRow();
+  var values = sh.getRange(rowNum, 1, 1, headers.length).getValues()[0];
+  var obj = {};
+  headers.forEach(function(h, i) { obj[h] = values[i]; });
+  obj.__rowNum = rowNum;
+  return obj;
 }
 
 function markInvitationOpened(token) {
@@ -75,17 +95,26 @@ function submitSurvey(token, payload) {
   var inv = getInvitationByToken_(token);
   if (!inv) throw new Error('Token inválido.');
   if (String(inv.estado) === 'Usado') throw new Error('La encuesta ya fue respondida con este enlace.');
+  if (String(inv.estado) === 'Anulado') throw new Error('El enlace fue anulado.');
 
-  var schema = getSurveySchema(token);
+  var schema = getSurveySchemaFromInvitation_(inv);
   validatePayloadAgainstSchema_(schema.sections, payload || {});
 
   var row = buildResponseRow_(payload || {}, inv);
-  appendObjectRow_(APP_CFG.SHEETS.RESPONSES, row);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    appendObjectRow_(APP_CFG.SHEETS.RESPONSES, row);
 
-  inv.estado = 'Usado';
-  inv.used_at = nowIso_();
-  if (!normalizeText_(inv.opened_at)) inv.opened_at = nowIso_();
-  updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, inv.__rowNum, inv);
+    inv.estado = 'Usado';
+    inv.used_at = nowIso_();
+    if (!normalizeText_(inv.opened_at)) inv.opened_at = nowIso_();
+    updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, inv.__rowNum, inv);
+  } catch (e) {
+    throw new Error('Servidor ocupado. Por favor, intente enviar de nuevo en unos segundos.');
+  } finally {
+    lock.releaseLock();
+  }
 
   rebuildAnalytics();
   auditLog_(inv.email || 'token:' + token, 'respondent', 'submit_survey', 'response', row.source_uuid, { edition: row.edicion });
@@ -174,8 +203,8 @@ function buildResponseRow_(payload, invitation) {
     salario_actual_banda: canonicalSalary_(payload.salario_actual_banda),
     salario_actual_orden: salaryOrder_(payload.salario_actual_banda),
     descuento_ips_actual: canonicalYesNo_(payload.descuento_ips_actual),
-    empresa_contratista_raw: normalizeText_(payload.empresa_contratista),
-    empresa_contratista: canonicalCompany_(payload.empresa_contratista),
+    empresa_contratista_raw: normalizeText_(payload.empresa_contratista === 'Otra (especificar)' ? payload.empresa_contratista_otra : payload.empresa_contratista),
+    empresa_contratista: canonicalCompany_(payload.empresa_contratista === 'Otra (especificar)' ? payload.empresa_contratista_otra : payload.empresa_contratista),
     source_id: '',
     source_uuid: uuid_(),
     source_status: 'submitted_via_app',

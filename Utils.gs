@@ -74,10 +74,14 @@ function columnMap_(headers) {
   return map;
 }
 
+var SHEET_CACHE_ = {};
+
 function getSheet_(name) {
+  if (SHEET_CACHE_[name]) return SHEET_CACHE_[name];
   var ss = getBackendSpreadsheet_();
   var sh = ss.getSheetByName(name);
   if (!sh) throw new Error('No existe la hoja: ' + name);
+  SHEET_CACHE_[name] = sh;
   return sh;
 }
 

@@ -1,4 +1,11 @@
 
+/** Ejecutar desde el editor GAS para inicializar el backend con el Spreadsheet de Paracel */
+function runSetup() {
+  setupBackend('1hyEyDe_1TXjk2Jfs8dLFrGW3-7Z19hgX6lmlDbqdf4c');
+  seedAll();
+  Logger.log('✅ runSetup() completado. Ahora despliegue como Web App.');
+}
+
 function setupBackend(spreadsheetId) {
   if (!spreadsheetId) throw new Error('Debe proporcionar spreadsheetId.');
   PropertiesService.getScriptProperties().setProperty('BACKEND_SPREADSHEET_ID', spreadsheetId);
@@ -46,4 +53,29 @@ function hashSeedUsers_() {
       updateRowByNumber_(APP_CFG.SHEETS.USERS, u.__rowNum, row);
     }
   });
+}
+
+function importConsolidatedCSV() {
+  var files = DriveApp.getFilesByName('ENCUESTA_CONSOLIDADA_2024_2025.csv');
+  if (!files.hasNext()) throw new Error('No se encontró el archivo ENCUESTA_CONSOLIDADA_2024_2025.csv en Google Drive. Asegúrese de que esté subido.');
+  var file = files.next();
+  var csvData = Utilities.parseCsv(file.getBlob().getDataAsString());
+  
+  var ss = getBackendSpreadsheet_();
+  var sh = ss.getSheetByName(APP_CFG.SHEETS.RESPONSES);
+  
+  // Limpiar datos existentes (preserva cabecera)
+  if (sh.getLastRow() > 1) {
+    sh.deleteRows(2, sh.getLastRow() - 1);
+  }
+  
+  // Insertar datos (omite cabecera del CSV)
+  var dataToInsert = csvData.slice(1);
+  if (dataToInsert.length > 0) {
+    sh.getRange(2, 1, dataToInsert.length, dataToInsert[0].length).setValues(dataToInsert);
+  }
+  
+  Logger.log('✅ Importación exitosa: ' + dataToInsert.length + ' filas.');
+  rebuildAnalytics();
+  Logger.log('✅ Analítica recalculada.');
 }

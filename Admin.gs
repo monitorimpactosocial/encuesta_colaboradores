@@ -459,16 +459,17 @@ function getLiveTailLimit_() {
 
 function patchIPSExceptions() {
   var ss = getBackendSpreadsheet_();
-  var sheet = ss.getSheetByName(APP_CFG.SHEETS.ANALYTIC);
-  if(!sheet) throw new Error("No se encontro BASE_ANALITICA");
+  var sheet = ss.getSheetByName(APP_CFG.SHEETS.RESPONSES);
+  if(!sheet) throw new Error("No se encontro RESPUESTAS");
   
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
   var nameIdx = headers.indexOf('nombre_completo_raw');
+  if (nameIdx === -1) nameIdx = headers.indexOf('nombre_completo');
   var ipsIdx = headers.indexOf('descuento_ips_actual');
   
   if (nameIdx === -1 || ipsIdx === -1) {
-    throw new Error("No se encontraron las columnas necesarias (nombre_completo_raw, descuento_ips_actual)");
+    throw new Error("No se encontraron las columnas necesarias (nombre_completo_raw o nombre_completo, descuento_ips_actual)");
   }
   
   var OVERRIDES = {

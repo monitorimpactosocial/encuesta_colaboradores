@@ -20,6 +20,7 @@ function login(username, password) {
     username: username,
     display_name: user.display_name || username,
     role: user.role || 'viewer',
+    mustChange: String(user.must_change_password).toUpperCase() === 'TRUE',
     expiresAt: Date.now() + APP_CFG.SESSION_HOURS * 3600 * 1000
   };
   PropertiesService.getScriptProperties().setProperty('session_' + token, jsonStringify_(payload));
@@ -29,7 +30,8 @@ function login(username, password) {
     user: {
       username: payload.username,
       displayName: payload.display_name,
-      role: payload.role
+      role: payload.role,
+      mustChange: payload.mustChange
     }
   };
 }
@@ -47,7 +49,8 @@ function validateSession_(token) {
   return {
     username: session.username,
     displayName: session.display_name || session.username,
-    role: session.role
+    role: session.role,
+    mustChange: session.mustChange
   };
 }
 
@@ -55,5 +58,30 @@ function logout(token) {
   var user = validateSession_(token);
   if (user) auditLog_(user.username, user.role, 'logout', 'session', token, {});
   PropertiesService.getScriptProperties().deleteProperty('session_' + token);
+  return { ok: true };
+}
+
+function changePassword(sessionToken, newPassword) {
+  var session = validateSession_(sessionToken);
+  if (!session) throw new Error('Sesión inválida.');
+  newPassword = normalizeText_(newPassword);
+  if (newPassword.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
+  
+  var users = getRowsAsObjects_(APP_CFG.SHEETS.USERS);
+  var user = users.filter(function(r) { return normalizeText_(r.username).toLowerCase() === session.username; })[0];
+  if (!user) throw new Error('Usuario no encontrado.');
+  
+  user.password_hash = sha256Hex_(session.username + '|' + newPassword);
+  user.must_change_password = 'FALSE';
+  updateRowByNumber_(APP_CFG.SHEETS.USERS, user.__rowNum, user);
+  
+  var raw = PropertiesService.getScriptProperties().getProperty('session_' + sessionToken);
+  if (raw) {
+    var p = jsonParse_(raw, {});
+    p.mustChange = false;
+    PropertiesService.getScriptProperties().setProperty('session_' + sessionToken, jsonStringify_(p));
+  }
+  
+  auditLog_(session.username, session.role, 'change_password', 'user', session.username, {});
   return { ok: true };
 }

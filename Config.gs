@@ -27,10 +27,16 @@ var APP_CFG = {
   ]
 };
 
+var BACKEND_SS_CACHE_ = null;
+var BACKEND_SS_ID_CACHE_ = '';
+
 function getBackendSpreadsheet_() {
   var id = PropertiesService.getScriptProperties().getProperty('BACKEND_SPREADSHEET_ID');
   if (!id) throw new Error('BACKEND_SPREADSHEET_ID no configurado. Ejecute setupBackend(spreadsheetId).');
-  return SpreadsheetApp.openById(id);
+  if (BACKEND_SS_CACHE_ && BACKEND_SS_ID_CACHE_ === id) return BACKEND_SS_CACHE_;
+  BACKEND_SS_ID_CACHE_ = id;
+  BACKEND_SS_CACHE_ = SpreadsheetApp.openById(id);
+  return BACKEND_SS_CACHE_;
 }
 
 function getBaseUrl_() {

@@ -128,9 +128,14 @@ function seedQuestionnaire() {
       'tipo_colaborador=Indirecto', false, true],
 
     [1,'S1','Identificación laboral', 30,'empresa_contratista',
-      'Nombre de la empresa contratista',
-      'text', false, '[]',
+      'Nombre de la empresa contratista principal',
+      'select', true, JSON.stringify(['TECNOFORESTAL','OAC MAQUINARIAS','LUSITANA','AGROGANADERA MARIA EUGENIA','RANCHO FORESTAL','PLANSUR','PROSEGUR','CONSTRUCTORA JM','BUREAU VERITAS','Otra (especificar)']),
       'tipo_colaborador=Indirecto', false, true],
+
+    [1,'S1','Identificación laboral', 35,'empresa_contratista_otra',
+      'Especifique el nombre de la empresa contratista',
+      'text', true, '[]',
+      'empresa_contratista=Otra (especificar)', false, true],
 
     [1,'S1','Identificación laboral', 40,'cargo',
       'Cargo o puesto',
@@ -302,6 +307,13 @@ function seedCatalogs() {
   // Área de residencia
   [['URB','Urbana'],['RUR','Rural']]
     .forEach(function(a) { rows.push(['area_residencia', a[0], a[1]]); });
+
+  // Empresas contratistas (Catálogo Maestro)
+  [['TECNOFORESTAL','TECNOFORESTAL'],['OAC','OAC MAQUINARIAS'],['LUSITANA','LUSITANA'],
+   ['AGRO','AGROGANADERA MARIA EUGENIA'],['RANCHO','RANCHO FORESTAL'],['PLANSUR','PLANSUR'],
+   ['PROSEGUR','PROSEGUR'],['JM','CONSTRUCTORA JM'],['BUREAU','BUREAU VERITAS'],
+   ['OTRA','Otra (especificar)']]
+    .forEach(function(e) { rows.push(['empresa_contratista', e[0], e[1]]); });
 
   var ss = getBackendSpreadsheet_();
   var sh = ss.getSheetByName(APP_CFG.SHEETS.CATALOGS);
