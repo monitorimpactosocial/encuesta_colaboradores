@@ -802,7 +802,7 @@ function renderResponses(view){
           '</div>'+
           '<div class="row">'+
             '<span class="badge info" id="respCount">'+rows.length+' filas</span>'+
-            '<button class="btn secondary" id="btnExportResp">⬇ Exportar CSV</button>'+
+            '<button class="btn btn-secondary" id="btnExportResp">⬇ Exportar CSV</button>'+
           '</div>'+
         '</div>'+
         '<div class="filter-row">'+
@@ -815,7 +815,7 @@ function renderResponses(view){
             '<option value="">Toda calidad</option>'+
             calidades.map(function(c){return '<option value="'+esc(c)+'"'+(state.responsesFilter.calidad===c?' selected':'')+'>'+esc(c)+'</option>';}).join('')+
           '</select>'+
-          '<button class="btn ghost" id="btnClearFilter">Limpiar</button>'+
+          '<button class="btn btn-ghost" id="btnClearFilter">Limpiar</button>'+
         '</div>'+
         '<div class="table-wrap">'+
           '<table>'+
@@ -898,7 +898,7 @@ function renderInvitations(view){
           '<td style="font-size:11px">'+esc(r.sent_at||'—')+'</td>'+
           '<td style="font-size:11px">'+esc(r.opened_at||'—')+'</td>'+
           '<td style="font-size:11px">'+esc(r.used_at||'—')+'</td>'+
-          '<td>'+(r.url_encuesta?'<button class="btn ghost btn-xs" onclick="window._copyInv(\''+esc(r.url_encuesta||'')+'\')">📋 Copiar</button>':'<span class="muted">—</span>')+'</td>'+
+          '<td>'+(r.url_encuesta?'<button class="btn btn-ghost btn-small" onclick="window._copyInv(\''+esc(r.url_encuesta||'')+'\')">📋 Copiar</button>':'<span class="muted">—</span>')+'</td>'+
         '</tr>';
       }).join('') : '<tr><td colspan="7" style="text-align:center;padding:24px" class="muted">Sin registros para este filtro.</td></tr>';
     }
@@ -912,7 +912,7 @@ function renderInvitations(view){
             '<div><label class="label">Tipo de acceso</label><select class="select" id="invTipo"><option value="respondent">Respondente</option></select></div>'+
             '<div class="full"><label class="label">Correos (uno por línea o separados por coma)</label><textarea class="textarea" id="invEmails" placeholder="correo1@empresa.com&#10;correo2@empresa.com"></textarea></div>'+
             '<div class="full row">'+
-              '<button class="btn secondary" id="btnGenInv">Generar tokens</button>'+
+              '<button class="btn btn-secondary" id="btnGenInv">Generar tokens</button>'+
               '<button class="btn" id="btnSendInv">Generar y enviar correos</button>'+
             '</div>'+
           '</div>'+
@@ -1142,7 +1142,7 @@ function renderSurvey(){
         '<hr class="sep">'+
         '<div class="row">'+
           '<button class="btn" id="btnSubmit">Enviar encuesta</button>'+
-          '<button class="btn ghost" id="btnReset">Limpiar borrador local</button>'+
+          '<button class="btn btn-ghost" id="btnReset">Limpiar borrador local</button>'+
         '</div>'+
       '</div>'+
     '</div>';
