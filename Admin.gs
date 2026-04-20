@@ -297,7 +297,7 @@ function getDashboardSummary(sessionToken, editionsArray) {
     .sort(function(a, b) { return a.tipo.localeCompare(b.tipo); });
 
   var summary = {
-    edicionFiltro: editionFilter || '',
+    edicionFiltro: edFilters.length ? edFilters.join('|') : '',
     edicionesDisponibles: mapToItems_(byEdicionesAll).sort(function(a,b){ return a.label.localeCompare(b.label); }),
     total:      total,
     directos:   directos,
