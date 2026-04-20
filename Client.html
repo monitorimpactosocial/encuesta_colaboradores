@@ -117,6 +117,7 @@ function donut(id, items, colors){
       datasets:[{data:items.map(function(x){return n(x.value);}),backgroundColor:colors,borderWidth:2,borderColor:'#fff'}]
     },
     options:{
+      maintainAspectRatio: false,
       cutout:'70%',
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
@@ -145,6 +146,7 @@ function hbar(id, items, colorFn, opts){
       }]
     },
     options:{
+      maintainAspectRatio: false,
       indexAxis:'y',
       plugins:{
         legend:{display:false},
@@ -171,6 +173,7 @@ function vbar(id, items, colors){
       datasets:[{data:items.map(function(x){return n(x.value);}),backgroundColor:colors||'#0f766e',borderRadius:8,borderSkipped:false}]
     },
     options:{
+      maintainAspectRatio: false,
       plugins:{legend:{display:false}},
       scales:{
         x:{grid:{display:false},ticks:{font:{size:12},color:'#0f2027'}},
@@ -198,6 +201,7 @@ function lineChart(id, labels, data, color){
       }]
     },
     options:{
+      maintainAspectRatio: false,
       plugins:{legend:{display:false}},
       scales:{
         x:{grid:{display:false},ticks:{font:{size:11},color:'#5a7580'}},
@@ -214,6 +218,7 @@ function stackedBar(id, labels, datasets, opts){
     type:'bar',
     data:{labels:labels||[],datasets:datasets||[]},
     options:{
+      maintainAspectRatio: false,
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
         tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}}
@@ -233,6 +238,7 @@ function multiBar(id, labels, datasets, opts){
     type:'bar',
     data:{labels:labels||[],datasets:datasets||[]},
     options:{
+      maintainAspectRatio: false,
       indexAxis: opts&&opts.horizontal ? 'y' : 'x',
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
@@ -475,10 +481,10 @@ function renderDashboard(view){
   
   view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando tablero...</div></div>';
 
-  const loadData = state.statsCacheByEdition[editionKey]
-    ? Promise.resolve(state.statsCacheByEdition[editionKey])
-    : call('getDashboardSummary', state.sessionToken, edFilters).then(function(d){
-        state.statsCacheByEdition[editionKey]=d; return d;
+  const loadData = state.fullSummary
+    ? Promise.resolve(state.fullSummary)
+    : call('getDashboardSummary', state.sessionToken).then(function(d){
+        state.fullSummary=d; return d;
       });
 
   function kpiTile(label, value, sub, cls){
@@ -564,17 +570,32 @@ function renderDashboard(view){
 
   return loadData.then(function(s){
     s = s || {};
-    const total=n(s.total);
-    const directos=n(s.directos);
-    const indirectos=n(s.indirectos);
-    const ipsPct=n(s.conIpsPct);
-    const conIps=n(s.conIps);
-    const edadProm=n(s.edadProm);
-    const calidadOkPct=n(s.calidadOkPct);
-    const ok=n(s.calidadOk);
-    const crit=n(s.calidadCritico);
-    const rev=n(s.calidadRevisar);
-    const flagsProm=n(s.nFlagsProm);
+    
+    // Aggregations locally
+    let total=0, directos=0, indirectos=0, conIps=0, edadesSum=0, edadesCount=0, ok=0, crit=0, rev=0, flagsSum=0;
+    const filteredStats = (s.editionStats || []).filter(function(st){
+      return edFilters.length === 0 || edFilters.indexOf(st.edicion) > -1;
+    });
+    
+    filteredStats.forEach(function(st){
+      total += n(st.total);
+      directos += n(st.directos);
+      indirectos += n(st.indirectos);
+      conIps += n(st.conIps);
+      edadesSum += n(st.edadesSum);
+      edadesCount += n(st.edadesCount);
+      ok += n(st.ok);
+      crit += n(st.critico);
+      rev += n(st.revisar);
+      flagsSum += n(st.flagsSum);
+    });
+
+    const ipsPct=total?Math.round(conIps*100/total):0;
+    const edadProm=edadesCount?Math.round((edadesSum/edadesCount)*10)/10:0;
+    const calidadOkPct=total?Math.round(ok*100/total):0;
+    const flagsProm=total?Math.round((flagsSum/total)*10)/10:0;
+
+    // We keep last7, last30 globally (not filtered by edition for now, or just show them)
     const last7=n(s.last7);
     const last30=n(s.last30);
     const delta=n(s.delta30Pct);
@@ -584,8 +605,31 @@ function renderDashboard(view){
     const editionOptions = [{label:'Todas las ediciones', value:'ALL'}].concat(
       (s.edicionesDisponibles||[]).map(function(x){return {label:x.label, value:x.label, count:x.value};})
     );
-    const topDept=(s.porDeptResidencia&&s.porDeptResidencia[0])?s.porDeptResidencia[0]:null;
-    const topEmp=(s.topEmpresasIndirecto&&s.topEmpresasIndirecto[0])?s.topEmpresasIndirecto[0]:null;
+    
+    // Compute aggregated maps
+    function aggregateMap(multiMap) {
+      const out = {};
+      if(multiMap) {
+        Object.keys(multiMap).forEach(function(ed) {
+          if (edFilters.length === 0 || edFilters.indexOf(ed) > -1) {
+            Object.keys(multiMap[ed]).forEach(function(k){ out[k] = (out[k]||0) + multiMap[ed][k]; });
+          }
+        });
+      }
+      return Object.keys(out).map(function(k){return {label:k, value:out[k]};}).sort(function(a,b){return b.value-a.value;});
+    }
+
+    const aggDept = aggregateMap(s.multi ? s.multi.dept : null).slice(0, 15);
+    const aggEmp = aggregateMap(s.multi ? s.multi.empresa : null).filter(function(x){return x.label!=='Sin dato';}).slice(0, 12);
+    const aggSalario = aggregateMap(s.multi ? s.multi.salario : null).sort(function(a,b){
+       const orden = {'Menos del salario mínimo':1,'Salario mínimo':2,'Entre 1 y 2 salarios mínimos':3,'Más de 2 salarios mínimos':4,'No aplica':5,'Sin dato':99};
+       return (orden[a.label]||99) - (orden[b.label]||99);
+    });
+    const aggTipo = aggregateMap(s.multi ? s.multi.tipo : null);
+    const aggCalidad = aggregateMap(s.multi ? s.multi.calidad : null);
+
+    const topDept=aggDept[0]?aggDept[0]:null;
+    const topEmp=aggEmp[0]?aggEmp[0]:null;
     const pctDir=total?Math.round(directos*100/total):0;
     const pctInd=total?Math.round(indirectos*100/total):0;
     const deltaTxt=(delta>=0?'+':'')+delta+'%';
@@ -596,7 +640,7 @@ function renderDashboard(view){
         '<div class="spread">'+
           '<div>'+
             '<h3 style="margin-bottom:6px">Tablero ejecutivo</h3>'+
-            '<p class="muted" style="font-size:12px">Rango de fechas: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros analíticos.</p>'+
+            '<p class="muted" style="font-size:12px">Rango global: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros seleccionados.</p>'+
           '</div>'+
           '<div class="row" id="dashEditionFilters">'+
             editionOptions.map(function(opt){
@@ -625,24 +669,24 @@ function renderDashboard(view){
         kpiTile('Flags promedio', flagsProm, 'Por registro')+
       '</div>'+
 
-      '<div class="charts-2">'+
-        '<div class="card"><div class="chart-hd"><h3>Tendencia mensual</h3><span class="chart-total">últimos '+(Array.isArray(s.serieMes)?s.serieMes.length:0)+'</span></div><canvas id="cSerieMes" height="240"></canvas></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Directos vs indirectos</h3><span class="chart-total">por edición</span></div><canvas id="cTipoEd" height="240"></canvas></div>'+
+      '<div class="grid-2" style="margin-top:16px">'+
+        '<div class="card"><div class="chart-hd"><h3>Tendencia mensual</h3><span class="chart-total">últimos '+(Array.isArray(s.serieMes)?s.serieMes.length:0)+'</span></div><div style="position:relative;height:240px;width:100%"><canvas id="cSerieMes"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Directos vs indirectos</h3><span class="chart-total">por edición</span></div><div style="position:relative;height:240px;width:100%"><canvas id="cTipoEd"></canvas></div></div>'+
       '</div>'+
 
-      '<div class="charts-2">'+
-        '<div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><canvas id="cDept" height="360"></canvas></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Empresas contratistas (indirectos)</h3><span class="chart-total">top 12</span></div><canvas id="cEmp" height="360"></canvas></div>'+
+      '<div class="grid-2" style="margin-top:16px">'+
+        '<div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><div style="position:relative;height:360px;width:100%"><canvas id="cDept"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Empresas contratistas (indirectos)</h3><span class="chart-total">top 12</span></div><div style="position:relative;height:360px;width:100%"><canvas id="cEmp"></canvas></div></div>'+
       '</div>'+
 
-      '<div class="charts-2">'+
-        '<div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">'+total+' resp.</span></div><canvas id="cSal" height="320"></canvas></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Calidad por edición</h3><span class="chart-total">OK / Revisar / Crítico</span></div><canvas id="cCalEd" height="320"></canvas></div>'+
+      '<div class="grid-2" style="margin-top:16px">'+
+        '<div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">'+total+' resp.</span></div><div style="position:relative;height:320px;width:100%"><canvas id="cSal"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Calidad por edición</h3><span class="chart-total">OK / Revisar / Crítico</span></div><div style="position:relative;height:320px;width:100%"><canvas id="cCalEd"></canvas></div></div>'+
       '</div>'+
 
-      '<div class="charts-2">'+
-        '<div class="card"><div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">'+total+' total</span></div><canvas id="cTipo" height="220"></canvas></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Estado de calidad</h3><span class="chart-total">'+total+' total</span></div><canvas id="cCalidad" height="220"></canvas></div>'+
+      '<div class="grid-2" style="margin-top:16px">'+
+        '<div class="card"><div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">'+total+' total</span></div><div style="position:relative;height:220px;width:100%"><canvas id="cTipo"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Estado de calidad</h3><span class="chart-total">'+total+' total</span></div><div style="position:relative;height:220px;width:100%"><canvas id="cCalidad"></canvas></div></div>'+
       '</div>'+
 
       '<div class="card" style="margin-top:18px">'+
@@ -653,7 +697,7 @@ function renderDashboard(view){
         renderEditionTable(s.editionStats)+
       '</div>'+
 
-      '<div class="charts-2" style="margin-top:18px">'+
+      '<div class="grid-2" style="margin-top:18px">'+
         '<div class="card">'+
           '<div class="spread" style="margin-bottom:12px">'+
             '<h3 style="margin-bottom:0">IPS por tipo</h3>'+
@@ -682,7 +726,7 @@ function renderDashboard(view){
       };
     });
     document.getElementById('dashRefresh').onclick=function(){
-      delete state.statsCacheByEdition[editionKey];
+      delete state.fullSummary;
       renderDashboard(view);
     };
 
@@ -700,19 +744,28 @@ function renderDashboard(view){
       );
 
       const mColors = ['#0f766e', '#6366f1', '#d97706', '#e11d48', '#059669'];
-      const deptOrig = safeItems(s.porDeptResidencia).map(function(x){return x.label;});
-      const empOrig = safeItems(s.topEmpresasIndirecto,'Sin dato').map(function(x){return x.label;});
-      const salOrig = safeItems(s.porSalario).map(function(x){return x.label;});
+      const deptOrig = aggDept.map(function(x){return x.label;});
+      const empOrig = aggEmp.map(function(x){return x.label;});
+      const salOrig = aggSalario.map(function(x){return x.label;});
       const salLabels = salOrig.map(shortSalario);
 
+      function subsetMulti(multiMap) {
+        if(!multiMap) return {};
+        const out = {};
+        Object.keys(multiMap).forEach(function(ed){
+          if(edFilters.length === 0 || edFilters.indexOf(ed) > -1) out[ed] = multiMap[ed];
+        });
+        return out;
+      }
+
       if (edFilters.length > 0 && s.multi) {
-        multiBar('cDept', deptOrig, buildMultiDs(s.multi.dept, deptOrig, mColors), {horizontal:true});
-        multiBar('cEmp', empOrig, buildMultiDs(s.multi.empresa, empOrig, mColors), {horizontal:true});
-        multiBar('cSal', salLabels, buildMultiDs(s.multi.salario, salOrig, mColors), {horizontal:true});
+        multiBar('cDept', deptOrig, buildMultiDs(subsetMulti(s.multi.dept), deptOrig, mColors), {horizontal:true});
+        multiBar('cEmp', empOrig, buildMultiDs(subsetMulti(s.multi.empresa), empOrig, mColors), {horizontal:true});
+        multiBar('cSal', salLabels, buildMultiDs(subsetMulti(s.multi.salario), salOrig, mColors), {horizontal:true});
       } else {
-        hbar('cDept', safeItems(s.porDeptResidencia), TEAL_GRAD);
-        hbar('cEmp', safeItems(s.topEmpresasIndirecto,'Sin dato'), INDIGO_GRAD, {max:undefined});
-        const salItems=safeItems(s.porSalario).map(function(x){return {label:shortSalario(x.label),value:x.value};});
+        hbar('cDept', aggDept, TEAL_GRAD);
+        hbar('cEmp', aggEmp, INDIGO_GRAD, {max:undefined});
+        const salItems=aggSalario.map(function(x){return {label:shortSalario(x.label),value:x.value};});
         hbar('cSal', salItems, AMBER_GRAD);
       }
 
@@ -726,8 +779,8 @@ function renderDashboard(view){
         ]
       );
 
-      donut('cTipo', safeItems(s.porTipo), ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
-      donut('cCalidad', safeItems(s.porEstadoCalidad), ['#16a34a','#d97706','#dc2626','#94a3b8']);
+      donut('cTipo', aggTipo, ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
+      donut('cCalidad', aggCalidad, ['#16a34a','#d97706','#dc2626','#94a3b8']);
     });
   });
 }

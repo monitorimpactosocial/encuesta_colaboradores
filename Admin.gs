@@ -31,10 +31,9 @@ var ANALYTIC_MIN_FIELDS_ = [
   'source_uuid'
 ];
 
-function getDashboardSummary(sessionToken, editionsArray) {
+function getDashboardSummary(sessionToken) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var edFilters = Array.isArray(editionsArray) ? editionsArray.map(normalizeText_).filter(Boolean) : [];
-  var cacheKey = 'dash_summary_multi_' + getDashboardCacheVersion_() + '_' + (edFilters.length ? edFilters.sort().join('|') : 'ALL');
+  var cacheKey = 'dash_summary_multi_all_' + getDashboardCacheVersion_();
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -174,8 +173,6 @@ function getDashboardSummary(sessionToken, editionsArray) {
     var nfAll = Number(r.n_flags);
     if (!isNaN(nfAll)) edStats.flagsSum += nfAll;
 
-    if (edFilters.length > 0 && edFilters.indexOf(ed) === -1) return;
-
     total++;
     inc_(byEdicion, ed);
 
@@ -281,7 +278,11 @@ function getDashboardSummary(sessionToken, editionsArray) {
       nFlagsProm: flagsP,
       ok: st.ok,
       revisar: st.revisar,
-      critico: st.critico
+      critico: st.critico,
+      conIps: st.conIps,
+      edadesSum: st.edadesSum,
+      edadesCount: st.edadesCount,
+      flagsSum: st.flagsSum
     };
   }).sort(function(a, b) { return a.edicion.localeCompare(b.edicion); });
 
@@ -297,7 +298,6 @@ function getDashboardSummary(sessionToken, editionsArray) {
     .sort(function(a, b) { return a.tipo.localeCompare(b.tipo); });
 
   var summary = {
-    edicionFiltro: edFilters.length ? edFilters.join('|') : '',
     edicionesDisponibles: mapToItems_(byEdicionesAll).sort(function(a,b){ return a.label.localeCompare(b.label); }),
     total:      total,
     directos:   directos,
