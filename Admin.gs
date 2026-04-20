@@ -472,6 +472,8 @@ function patchIPSExceptions() {
   var tipoIdx = headers.indexOf('tipo_colaborador');
   var ipsIdx = headers.indexOf('descuento_ips_actual');
   if (ipsIdx === -1) ipsIdx = headers.indexOf('ips_actual');
+  var nombreIdx = headers.indexOf('nombre_completo');
+  if (nombreIdx === -1) nombreIdx = headers.indexOf('nombre_completo_raw');
   
   if (empIdx === -1 || cargoIdx === -1 || tipoIdx === -1 || ipsIdx === -1) {
     throw new Error("Columnas no encontradas. Cabeceras: " + headers.join(", "));
@@ -497,6 +499,25 @@ function patchIPSExceptions() {
     { emp: "LO DE GANSO", cargo: "Proveedor de Servicio", val: "No aplica (Justificado)" },
     { emp: "MORADO EMPREND", cargo: "Propietaria", val: "No aplica (Justificado)" }
   ];
+
+  var NAMES_SI = [
+    "EDGAR DAVID ARGUELLO PEREIRA", "ANICIA NOEMI GONZALEZ CENTURION", "RENATO RAMON GONZALEZ CENTURION",
+    "WILSON DAVID BENITEZ FERNANDEZ", "ELBA MELGAREJO MORINIGO", "AGUSTIN ACOSTA BENITEZ",
+    "ALDO JAVIER GONZALEZ", "HUGO OVELAR BUSTAMANTE", "RIOS COLMAN CRISTHIAN", "CRISTIAN ARIEL AVALOS CANO"
+  ];
+
+  var NAMES_NO_APLICA = [
+    "DOLLY GRICELDA MENDEZ CANTERO", "ELIAS SANTOS GOMES JUNIOR", "EDSON FERREIRA DA SILVA",
+    "WILFRIDO PEREZ", "MIRIAM CORDEIRO ISTORI", "MARIANO RAMON SALERMO RAMIREZ",
+    "MARIA CELESTE GONZALEZ GONZALEZ", "OSCAR ARMANDO GAVILAN ROJAS", "ALFREDO ARIEL ARECO PEREZ",
+    "CESAR ORLANDO SOSA CRISTALDO", "JENNER KARIM MEDINA GARCIA", "Marcos García",
+    "JOSÉ ROLANDO CHAMORRO LESME", "AGACIR LUIS GIARETTA", "CRISTIAN GUSTAVO ALMEIDA BENITEZ",
+    "JUAN BAUTISTA GIARETTA", "LUIS FELIPE ESPINOLA ZIMMERMAN", "orivaldo Almeida Cardoso",
+    "WILLI KOLBACIUK SILVA", "PALACIOS FERREIRA LUIS ANTONIO", "TAMARA JACQUELINE RUIZ DEGIACOMI",
+    "BLAS IGNACIO MACIEL VILLALBA", "CARLOS ENRIQUE BERNAL RIOS", "Gabriela Vera",
+    "HUGO RICARDO CABRAL ISNARDI", "RUTH MARIA NIZ FLORENCIANI", "Adenilson Fagner Silva Pereira",
+    "PERLA ORTIZ"
+  ];
   
   function norm(str) {
     return String(str||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -506,6 +527,7 @@ function patchIPSExceptions() {
   for (var i = 1; i < data.length; i++) {
     var rEmp = norm(data[i][empIdx]);
     var rCargo = norm(data[i][cargoIdx]);
+    var rName = nombreIdx > -1 ? norm(data[i][nombreIdx]) : '';
     
     var overrideValue = null;
     
@@ -517,6 +539,23 @@ function patchIPSExceptions() {
       }
     }
     
+    if (!overrideValue && rName) {
+      for (var k = 0; k < NAMES_SI.length; k++) {
+        if (rName.indexOf(norm(NAMES_SI[k])) > -1 || norm(NAMES_SI[k]).indexOf(rName) > -1) {
+          overrideValue = "Sí";
+          break;
+        }
+      }
+      if (!overrideValue) {
+        for (var k = 0; k < NAMES_NO_APLICA.length; k++) {
+          if (rName.indexOf(norm(NAMES_NO_APLICA[k])) > -1 || norm(NAMES_NO_APLICA[k]).indexOf(rName) > -1) {
+            overrideValue = "No aplica (Justificado)";
+            break;
+          }
+        }
+      }
+    }
+
     if (!overrideValue) {
       for (var j = 0; j < OVERRIDES.length; j++) {
         var oEmp = norm(OVERRIDES[j].emp);
