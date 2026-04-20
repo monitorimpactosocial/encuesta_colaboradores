@@ -464,50 +464,55 @@ function patchIPSExceptions() {
   
   var data = sheet.getDataRange().getValues();
   var headers = data[0];
-  var nameIdx = headers.indexOf('nombre_completo_raw');
-  if (nameIdx === -1) nameIdx = headers.indexOf('nombre_completo');
-  if (nameIdx === -1) nameIdx = headers.indexOf('nombre_apellido');
   
+  var empIdx = headers.indexOf('empresa_contratista_raw');
+  if (empIdx === -1) empIdx = headers.indexOf('empresa_contratista');
+  var cargoIdx = headers.indexOf('cargo_raw');
+  if (cargoIdx === -1) cargoIdx = headers.indexOf('cargo');
+  var tipoIdx = headers.indexOf('tipo_colaborador');
   var ipsIdx = headers.indexOf('descuento_ips_actual');
   if (ipsIdx === -1) ipsIdx = headers.indexOf('ips_actual');
   
-  if (nameIdx === -1 || ipsIdx === -1) {
-    throw new Error("Columnas no encontradas. nameIdx=" + nameIdx + ", ipsIdx=" + ipsIdx + ". Cabeceras: " + headers.join(", "));
+  if (empIdx === -1 || cargoIdx === -1 || tipoIdx === -1 || ipsIdx === -1) {
+    throw new Error("Columnas no encontradas. Cabeceras: " + headers.join(", "));
   }
   
-  var OVERRIDES = {
-    "EDGAR DAVID ARGUELLO PEREIRA": "No aplica (Justificado)",
-    "ANICIA NOEMI GONZALEZ CENTURION": "No aplica (Justificado)",
-    "RENATO RAMON GONZALEZ CENTURION": "No aplica (Justificado)",
-    "WILSON DAVID BENITEZ FERNANDEZ": "No aplica (Justificado)",
-    "DOLLY GRICELDA MENDEZ CANTERO": "Sí",
-    "ELIAS SANTOS GOMES JUNIOR": "No aplica (Justificado)",
-    "EDSON FERREIRA DA SILVA": "No aplica (Justificado)",
-    "WILFRIDO PEREZ": "Sí",
-    "MIRIAM CORDEIRO ISTORI": "No aplica (Justificado)",
-    "MARIANO RAMON SALERMO RAMIREZ": "No aplica (Justificado)",
-    "MARIA CELESTE GONZALEZ GONZALEZ": "No aplica (Justificado)",
-    "ELBA MELGAREJO MORINIGO": "No aplica (Justificado)",
-    "OSCAR ARMANDO GAVILAN ROJAS": "No aplica (Justificado)",
-    "CRISTIAN ARIEL AVALOS CANO": "No aplica (Justificado)",
-    "ANDRES DANIEL CRISTALDO MALLORQUIN": "No aplica (Justificado)",
-    "MARCOS GARCÍA": "No aplica (Justificado)",
-    "MARCOS GARCIA": "No aplica (Justificado)",
-    "JOSÉ ROLANDO CHAMORRO LESME": "No aplica (Justificado)",
-    "JOSE ROLANDO CHAMORRO LESME": "No aplica (Justificado)",
-    "PERLA ORTIZ": "No aplica (Justificado)"
-  };
+  var OVERRIDES = [
+    { emp: "ARAMI", cargo: "Fumigador", val: "No aplica (Justificado)" },
+    { emp: "ASISMOE", cargo: "Medicina Laboral", val: "No aplica (Justificado)" },
+    { emp: "ASISMOE", cargo: "Médico Laboral", val: "No aplica (Justificado)" },
+    { emp: "ASISMOE", cargo: "Enfermero", val: "No aplica (Justificado)" },
+    { emp: "BUREAU VERITAS", cargo: "Auxiliar Administrativo", val: "Sí" },
+    { emp: "BUREAU VERITAS PY SRL", cargo: "Ing. Civil", val: "No aplica (Justificado)" },
+    { emp: "CONSTRUCTORA JM", cargo: "Propietario", val: "No aplica (Justificado)" },
+    { emp: "CONSTRUCTORA JM", cargo: "Chofer", val: "Sí" },
+    { emp: "CONSTRUCTORA JM INGENIERIA", cargo: "Directora de JM Constructora", val: "No aplica (Justificado)" },
+    { emp: "CONSTRUCTORA JM/ELECTROMECANICA SAN RAFAEL", cargo: "Propietario", val: "No aplica (Justificado)" },
+    { emp: "CSI INGENIEROS PARAGUAY", cargo: "Técnica Ambiental", val: "No aplica (Justificado)" },
+    { emp: "DAF", cargo: "Cocinera Encargada", val: "No aplica (Justificado)" },
+    { emp: "G.J.R. COMERCIAL", cargo: "Parte Administrativa", val: "No aplica (Justificado)" },
+    { emp: "Galbon", cargo: "Paramédico", val: "No aplica (Justificado)" },
+    { emp: "INFOMASTER", cargo: "Mantenimiento de Torre", val: "No aplica (Justificado)" },
+    { emp: "INGENIERIA AMBIENTAL S.A.", cargo: "Directivo", val: "No aplica (Justificado)" },
+    { emp: "LO DE GANSO", cargo: "Proveedor de Servicio", val: "No aplica (Justificado)" },
+    { emp: "MORADO EMPREND", cargo: "Propietaria", val: "No aplica (Justificado)" }
+  ];
+  
+  function norm(str) {
+    return String(str||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  }
   
   var modCount = 0;
   for (var i = 1; i < data.length; i++) {
-    var rawName = String(data[i][nameIdx] || '').trim().toUpperCase();
-    if (!rawName) continue;
+    var rEmp = norm(data[i][empIdx]);
+    var rCargo = norm(data[i][cargoIdx]);
     
-    // Check if name is in overrides
     var overrideValue = null;
-    for (var key in OVERRIDES) {
-      if (rawName.indexOf(key) > -1) {
-        overrideValue = OVERRIDES[key];
+    for (var j = 0; j < OVERRIDES.length; j++) {
+      var oEmp = norm(OVERRIDES[j].emp);
+      var oCargo = norm(OVERRIDES[j].cargo);
+      if (rEmp.indexOf(oEmp) > -1 && rCargo.indexOf(oCargo) > -1) {
+        overrideValue = OVERRIDES[j].val;
         break;
       }
     }
