@@ -855,9 +855,7 @@ function updateConfig(sessionToken, pairs) {
 }
 
 function rebuildAnalytics() {
-  var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000);
     var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
     if (!responseRows.length) return { ok: true, rows: 0 };
 
@@ -887,8 +885,6 @@ function rebuildAnalytics() {
   bumpDashboardCacheVersion_();
   return { ok: true, rows: responseRows.length, longRows: longRows.length };
   } catch (e) {
-    throw new Error('Sistema procesando datos. Intente nuevamente en unos segundos.');
-  } finally {
-    lock.releaseLock();
+    throw new Error('Error al reconstruir la analítica: ' + e.message);
   }
 }
