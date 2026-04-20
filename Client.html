@@ -658,14 +658,31 @@ function renderDashboard(view){
                 '<p class="muted" style="font-size:12px">Rango global: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros seleccionados.</p>'+
               '</div>'+
             '</div>'+
-            '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">'+
-          '<span class="badge info">Directos: '+pctDir+'%</span>'+
-          '<span class="badge info">Indirectos: '+pctInd+'%</span>'+
-          (topDept?'<span class="badge muted">Top dpto.: '+esc(topDept.label)+' ('+n(topDept.value)+')</span>':'')+
-          (topEmp?'<span class="badge muted">Top empresa: '+esc(topEmp.label)+' ('+n(topEmp.value)+')</span>':'')+
-          '<span class="'+deltaBadge+'">30 días: '+last30+' ('+deltaTxt+')</span>'+
-        '</div>'+
-      '</div>'+
+            '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top:16px;">'+
+              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid var(--primary);">'+
+                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Directos</div>'+
+                '<div style="color: var(--primary); font-size: 20px; font-weight: 900; margin-top: 4px;">'+pctDir+'% <span style="font-size:12px; color:var(--muted); font-weight:700;">('+directos+')</span></div>'+
+              '</div>'+
+              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid var(--primary);">'+
+                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Indirectos</div>'+
+                '<div style="color: var(--primary); font-size: 20px; font-weight: 900; margin-top: 4px;">'+pctInd+'% <span style="font-size:12px; color:var(--muted); font-weight:700;">('+indirectos+')</span></div>'+
+              '</div>'+
+              (topDept ? 
+              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid var(--primary);">'+
+                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Top Dpto.</div>'+
+                '<div style="color: var(--primary); font-size: 15px; font-weight: 900; margin-top: 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="'+esc(topDept.label)+'">'+esc(topDept.label)+' <span style="font-size:12px; color:var(--muted); font-weight:700;">('+n(topDept.value)+')</span></div>'+
+              '</div>' : '')+
+              (topEmp ? 
+              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid var(--primary);">'+
+                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Top Empresa</div>'+
+                '<div style="color: var(--primary); font-size: 15px; font-weight: 900; margin-top: 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="'+esc(topEmp.label)+'">'+esc(topEmp.label)+' <span style="font-size:12px; color:var(--muted); font-weight:700;">('+n(topEmp.value)+')</span></div>'+
+              '</div>' : '')+
+              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid '+(delta>=10?'#16a34a':delta>=0?'#d97706':'#dc2626')+';">'+
+                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Últimos 30 días</div>'+
+                '<div style="color: var(--primary); font-size: 20px; font-weight: 900; margin-top: 4px;">'+last30+' <span style="font-size:14px; color:'+(delta>=10?'#16a34a':delta>=0?'#d97706':'#dc2626')+'; font-weight:800;">('+deltaTxt+')</span></div>'+
+              '</div>'+
+            '</div>'+
+          '</div>'+
 
       '<div class="kpi-row">'+
         kpiTile('Registros', total.toLocaleString(), (edFilters.length?edFilters.join(', '):'Todas las ediciones'), 'emph')+
