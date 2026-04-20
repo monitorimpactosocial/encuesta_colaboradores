@@ -6,6 +6,20 @@ function runSetup() {
   Logger.log('✅ runSetup() completado. Ahora despliegue como Web App.');
 }
 
+function autoFixSystem() {
+  ensureHeaders_(APP_CFG.SHEETS.CONFIG, ['clave','valor','descripcion']);
+  ensureHeaders_(APP_CFG.SHEETS.EDITIONS, ['edition_id','edition_name','status','start_date','end_date','notes']);
+  ensureHeaders_(APP_CFG.SHEETS.USERS, ['username','display_name','role','password_hash','password_temporal','active','must_change_password','notes']);
+  ensureHeaders_(APP_CFG.SHEETS.QUESTIONNAIRE, ['section_order','section_id','section_label','question_order','field_name','label','input_type','required','options_json','visible_if','contains_pii','include_in_analytics']);
+  ensureHeaders_(APP_CFG.SHEETS.CATALOGS, ['catalogo','codigo','etiqueta']);
+  ensureHeaders_(APP_CFG.SHEETS.ANALYTIC, []);
+  ensureHeaders_(APP_CFG.SHEETS.LONG, ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor']);
+  ensureHeaders_(APP_CFG.SHEETS.INVITATIONS, ['token','edition_id','email','nombre_destinatario','tipo_acceso','estado','url_encuesta','sent_at','opened_at','used_at','notes']);
+  ensureHeaders_(APP_CFG.SHEETS.AUDIT, ['event_ts','actor','role','action','entity','entity_id','payload_json']);
+  rebuildAnalytics();
+  Logger.log('✅ autoFixSystem() completado: Hojas faltantes creadas y analítica reconstruida.');
+}
+
 function setupBackend(spreadsheetId) {
   if (!spreadsheetId) throw new Error('Debe proporcionar spreadsheetId.');
   PropertiesService.getScriptProperties().setProperty('BACKEND_SPREADSHEET_ID', spreadsheetId);
