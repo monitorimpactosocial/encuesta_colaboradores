@@ -2,7 +2,6 @@
 (function(){
 'use strict';
 
-/* ── Estado global ──────────────────────────────────── */
 const state = {
   sessionToken: localStorage.getItem('encuesta_colab_session') || '',
   user: null,
@@ -12,40 +11,100 @@ const state = {
   schema: null,
   token: (window.SERVER_CONTEXT && window.SERVER_CONTEXT.token) || '',
   surveyStartedAt: localStorage.getItem('encuesta_colab_started_at') || '',
-  activeTab: 'dashboard'
+  activeTab: 'dashboard',
+  responsesData: null,
+  responsesFilter: {search:'', tipo:'', calidad:''},
+  responsesSort: {col:'', dir:1}
 };
-const CHARTS = {};   // instancias Chart.js activas
+const CHARTS = {};
 const app = document.getElementById('app');
 
-/* ── Helpers base ──────────────────────────────────── */
-function call(name, ...args){
-  return new Promise((resolve, reject) => {
-    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args);
+/* ── Toast system ───────────────────────────────────── */
+function toast(msg, type, duration){
+  type = type || 'info';
+  duration = duration || 3500;
+  let cont = document.getElementById('toast-container');
+  if(!cont){
+    cont = document.createElement('div');
+    cont.id = 'toast-container';
+    document.body.appendChild(cont);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  cont.appendChild(t);
+  requestAnimationFrame(function(){ t.classList.add('show'); });
+  setTimeout(function(){
+    t.classList.remove('show');
+    setTimeout(function(){ t.remove(); }, 400);
+  }, duration);
+}
+
+/* ── Helpers ─────────────────────────────────────────── */
+function call(name){
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject){
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name].apply(null, args);
   });
 }
-function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(s){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]);}); }
 function n(v){ return Number(v)||0; }
 function safeParse(v,fb){ try{return JSON.parse(v);}catch(e){return fb;} }
 function setSession(token,user){ state.sessionToken=token||''; state.user=user||null; localStorage.setItem('encuesta_colab_session',state.sessionToken); }
 function clearSession(){ state.sessionToken=''; state.user=null; localStorage.removeItem('encuesta_colab_session'); }
+
 function statusBadge(v){
   const t=String(v||'');
   const cls=t==='OK'||t==='Abierta'||t==='Usado'?'ok':t==='Crítico'||t==='Anulado'?'danger':t==='Revisar'||t==='Enviado'||t==='Generado'?'warn':'muted';
-  return `<span class="badge ${cls}">${esc(t)}</span>`;
+  return '<span class="badge '+cls+'">'+esc(t)+'</span>';
 }
 function safeItems(items, label){
   if(Array.isArray(items) && items.length) return items;
   return [{label: label || 'Sin dato', value: 0}];
 }
-
 function setTabError(view, err, fallback){
   const msg = (err && err.message) ? err.message : (fallback || 'No se pudo cargar la vista.');
-  view.innerHTML = `<div class="card"><p class="muted">${esc(msg)}</p></div>`;
+  view.innerHTML = '<div class="card"><p class="muted">'+esc(msg)+'</p></div>';
 }
+
+/* ── Btn loading state ──────────────────────────────── */
+function btnLoad(el, msg){ el.disabled=true; el._orig=el.textContent; el.textContent=msg||'Cargando...'; }
+function btnReset(el){ el.disabled=false; el.textContent=el._orig||'OK'; }
+
+/* ── CSV export ─────────────────────────────────────── */
+function exportCsv(rows, cols, filename){
+  const header = cols.map(function(c){return c.l;}).join(',');
+  const lines = rows.map(function(r){
+    return cols.map(function(c){
+      let v = String(r[c.k]||'');
+      if(v.indexOf(',')>-1||v.indexOf('"')>-1||v.indexOf('\n')>-1) v='"'+v.replace(/"/g,'""')+'"';
+      return v;
+    }).join(',');
+  });
+  const csv = [header].concat(lines).join('\n');
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ── Copy to clipboard ──────────────────────────────── */
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toast('Enlace copiado','success'); }).catch(function(){ toast('No se pudo copiar','error'); });
+  } else {
+    const ta=document.createElement('textarea'); ta.value=text;
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('Enlace copiado','success'); }catch(_){ toast('No se pudo copiar','error'); }
+    document.body.removeChild(ta);
+  }
+}
+window._copyInv = copyText;
 
 /* ── Chart helpers ─────────────────────────────────── */
 function destroyChart(id){ if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];} }
-function total(arr){ return (arr||[]).reduce((s,x)=>s+n(x.value),0); }
+function total(arr){ return (arr||[]).reduce(function(s,x){return s+n(x.value);},0); }
 
 function donut(id, items, colors){
   destroyChart(id);
@@ -54,16 +113,16 @@ function donut(id, items, colors){
   CHARTS[id]=new Chart(el,{
     type:'doughnut',
     data:{
-      labels:items.map(x=>x.label),
-      datasets:[{data:items.map(x=>n(x.value)),backgroundColor:colors,borderWidth:2,borderColor:'#fff'}]
+      labels:items.map(function(x){return x.label;}),
+      datasets:[{data:items.map(function(x){return n(x.value);}),backgroundColor:colors,borderWidth:2,borderColor:'#fff'}]
     },
     options:{
       cutout:'70%',
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
-        tooltip:{callbacks:{label:ctx=>{
+        tooltip:{callbacks:{label:function(ctx){
           const pct=tot?Math.round(n(ctx.raw)/tot*100):0;
-          return ` ${ctx.label}: ${ctx.raw} (${pct}%)`;
+          return ' '+ctx.label+': '+ctx.raw+' ('+pct+'%)';
         }}}
       }
     }
@@ -73,31 +132,29 @@ function donut(id, items, colors){
 function hbar(id, items, colorFn, opts){
   destroyChart(id);
   const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return;
-  const labels=items.map(x=>x.label);
-  const data=items.map(x=>n(x.value));
-  const max=Math.max(...data)||1;
+  const labels=items.map(function(x){return x.label;});
+  const data=items.map(function(x){return n(x.value);});
   CHARTS[id]=new Chart(el,{
     type:'bar',
     data:{
-      labels,
+      labels:labels,
       datasets:[{
-        data,
-        backgroundColor: typeof colorFn==='function' ? data.map((_,i)=>colorFn(i,data.length)) : (colorFn||'#0f766e'),
-        borderRadius:6,
-        borderSkipped:false
+        data:data,
+        backgroundColor: typeof colorFn==='function' ? data.map(function(_,i){return colorFn(i,data.length);}) : (colorFn||'#0f766e'),
+        borderRadius:6,borderSkipped:false
       }]
     },
     options:{
       indexAxis:'y',
       plugins:{
         legend:{display:false},
-        tooltip:{callbacks:{label:ctx=>{
+        tooltip:{callbacks:{label:function(ctx){
           const pct=total(items)?Math.round(n(ctx.raw)/total(items)*100):0;
-          return ` ${ctx.raw} (${pct}%)`;
+          return ' '+ctx.raw+' ('+pct+'%)';
         }}}
       },
       scales:{
-        x:{grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'},max: opts&&opts.max?opts.max:undefined},
+        x:{grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'},max:opts&&opts.max?opts.max:undefined},
         y:{grid:{display:false},ticks:{font:{size:11},color:'#0f2027'}}
       }
     }
@@ -110,8 +167,8 @@ function vbar(id, items, colors){
   CHARTS[id]=new Chart(el,{
     type:'bar',
     data:{
-      labels:items.map(x=>x.label),
-      datasets:[{data:items.map(x=>n(x.value)),backgroundColor:colors||'#0f766e',borderRadius:8,borderSkipped:false}]
+      labels:items.map(function(x){return x.label;}),
+      datasets:[{data:items.map(function(x){return n(x.value);}),backgroundColor:colors||'#0f766e',borderRadius:8,borderSkipped:false}]
     },
     options:{
       plugins:{legend:{display:false}},
@@ -123,23 +180,64 @@ function vbar(id, items, colors){
   });
 }
 
-const TEAL_GRAD = (i,n)=>`hsl(${173-i*(30/Math.max(n-1,1))},${79-i*8}%,${38+i*5}%)`;
-const AMBER_GRAD = (i,n)=>`hsl(${35+i*(10/Math.max(n-1,1))},${80}%,${35+i*6}%)`;
+function lineChart(id, labels, data, color){
+  destroyChart(id);
+  const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return;
+  CHARTS[id]=new Chart(el,{
+    type:'line',
+    data:{
+      labels:labels||[],
+      datasets:[{
+        data:data||[],
+        borderColor:color||'#0f766e',
+        backgroundColor:'rgba(15,118,110,.12)',
+        tension:.25,
+        fill:true,
+        pointRadius:3,
+        pointHoverRadius:4
+      }]
+    },
+    options:{
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:11},color:'#5a7580'}},
+        y:{grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'},beginAtZero:true}
+      }
+    }
+  });
+}
+
+function stackedBar(id, labels, datasets, opts){
+  destroyChart(id);
+  const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return;
+  CHARTS[id]=new Chart(el,{
+    type:'bar',
+    data:{labels:labels||[],datasets:datasets||[]},
+    options:{
+      plugins:{
+        legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
+        tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}}
+      },
+      scales:{
+        x:{stacked:true,grid:{display:false},ticks:{font:{size:11},color:'#0f2027'}},
+        y:{stacked:true,grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'},beginAtZero:true, max:opts&&opts.max?opts.max:undefined}
+      }
+    }
+  });
+}
+
+const TEAL_GRAD = function(i,nn){return 'hsl('+(173-i*(30/Math.max(nn-1,1)))+','+(79-i*8)+'%,'+(38+i*5)+'%)';};
+const AMBER_GRAD = function(i,nn){return 'hsl('+(35+i*(10/Math.max(nn-1,1)))+',80%,'+(35+i*6)+'%)';};
+const INDIGO_GRAD = function(i,nn){return 'hsl('+(238+i*(15/Math.max(nn-1,1)))+','+(72-i*5)+'%,'+(40+i*5)+'%)';};
 
 function shortSalario(s){
   const m={
-    'Menos del salario mínimo':'< Sal. mínimo',
-    'Salario mínimo':'Sal. mínimo',
-    'Más del salario mínimo y hasta 3 millones':'Sal. mín. – 3M',
-    'Más de 3 millones y hasta 5 millones':'3M – 5M',
-    'Más de 5 millones y hasta 7 millones':'5M – 7M',
-    'Más de 7 millones y hasta 10 millones':'7M – 10M',
-    'Más de 10 millones y hasta 13 millones':'10M – 13M',
-    'Más de 13 millones y hasta 15 millones':'13M – 15M',
-    'Más de 15 millones y hasta 20 millones':'15M – 20M',
-    'Más de 20 millones y hasta 30 millones':'20M – 30M',
-    'Más de 30 millones':'> 30M',
-    'No informa':'No informa'
+    'Menos del salario mínimo':'< Sal. mínimo','Salario mínimo':'Sal. mínimo',
+    'Más del salario mínimo y hasta 3 millones':'Sal. mín. – 3M','Más de 3 millones y hasta 5 millones':'3M – 5M',
+    'Más de 5 millones y hasta 7 millones':'5M – 7M','Más de 7 millones y hasta 10 millones':'7M – 10M',
+    'Más de 10 millones y hasta 13 millones':'10M – 13M','Más de 13 millones y hasta 15 millones':'13M – 15M',
+    'Más de 15 millones y hasta 20 millones':'15M – 20M','Más de 20 millones y hasta 30 millones':'20M – 30M',
+    'Más de 30 millones':'> 30M','No informa':'No informa'
   };
   return m[s]||s;
 }
@@ -148,7 +246,7 @@ function shortSalario(s){
 function init(){
   if(state.token){
     renderSurveyLoading();
-    call('markInvitationOpened', state.token).finally(loadSurveySchema);
+    call('markInvitationOpened', state.token).catch(function(){}).then(loadSurveySchema);
     return;
   }
   if(state.sessionToken){ loadBootstrap(); } else { renderLogin(); }
@@ -156,461 +254,817 @@ function init(){
 
 /* ── Login ─────────────────────────────────────────── */
 function renderLogin(msg){
-  app.innerHTML=`
-    <div class="login-shell">
-      <div class="hero">
-        <h2>Monitor de Impacto Social</h2>
-        <p>Encuesta de colaboradores · Paracel S.A. · Panel de administración y análisis.</p>
-      </div>
-      <div class="card" style="margin-top:18px">
-        <h3>Ingreso al panel</h3>
-        ${msg?`<div class="notice" style="margin-bottom:14px">${esc(msg)}</div>`:''}
-        <div class="form-grid">
-          <div class="full"><label class="label">Usuario</label><input id="loginUser" class="input" autocomplete="username"></div>
-          <div class="full"><label class="label">Contraseña</label><input id="loginPass" class="input" type="password" autocomplete="current-password"></div>
-          <div class="full"><button class="btn" id="btnLogin" style="width:100%">Ingresar</button></div>
-        </div>
-        <p class="muted" style="margin-top:14px;font-size:12px">Los colaboradores acceden mediante enlace único enviado por correo.</p>
-      </div>
-    </div>`;
-  const doLogin = async () => {
+  app.innerHTML=
+    '<div class="login-shell">'+
+      '<div class="card login-card">'+
+        '<div style="display:flex; justify-content:center; margin-bottom:16px;">'+
+          '<div class="logo">PARACEL</div>'+
+        '</div>'+
+        '<h2 style="text-align:center; margin-bottom: 8px; font-size:22px; letter-spacing:-0.03em;">Monitor de Impacto Social</h2>'+
+        '<p class="muted small" style="text-align:center; margin-bottom: 24px;">Encuesta de colaboradores · Panel de administración</p>'+
+        (msg?'<div class="callout" style="border-left: 4px solid var(--danger); margin-bottom:14px"><div class="callout-title" style="color:var(--danger); font-size:14px;">Error</div><div class="muted small">'+esc(msg)+'</div></div>':'')+
+        '<div class="form-grid" style="grid-template-columns: 1fr;">'+
+          '<div class="field">'+
+            '<label for="loginUser">Usuario</label>'+
+            '<input type="text" id="loginUser" placeholder="Usuario" autocomplete="username" autofocus />'+
+          '</div>'+
+          '<div class="field">'+
+            '<label for="loginPass">Contraseña</label>'+
+            '<input type="password" id="loginPass" placeholder="Contraseña" autocomplete="current-password" />'+
+          '</div>'+
+        '</div>'+
+        '<div class="btn-row mt-16" style="justify-content:center;">'+
+          '<button class="btn btn-primary" id="btnLogin" style="width:100%; font-size:16px;">Ingresar al panel</button>'+
+        '</div>'+
+        '<p class="muted" style="margin-top:14px;font-size:12px;text-align:center;">Los colaboradores acceden mediante enlace único enviado por correo.</p>'+
+      '</div>'+
+    '</div>';
+  const doLogin = function() {
     const btn=document.getElementById('btnLogin');
-    btn.disabled=true; btn.textContent='Verificando...';
-    try{
-      const res=await call('login',document.getElementById('loginUser').value,document.getElementById('loginPass').value);
-      setSession(res.token,res.user); loadBootstrap();
-    }catch(err){ btn.disabled=false; btn.textContent='Ingresar'; renderLogin(err.message||'No fue posible ingresar.'); }
+    btnLoad(btn,'Verificando...');
+    call('login',document.getElementById('loginUser').value,document.getElementById('loginPass').value).then(function(res){
+      setSession(res.token,res.user); 
+      if (res.user.mustChange) {
+        state.bootstrap = { user: res.user };
+        renderChangePassword();
+      } else {
+        loadBootstrap();
+      }
+    }).catch(function(err){ btnReset(btn); renderLogin(err.message||'No fue posible ingresar.'); });
   };
   document.getElementById('btnLogin').onclick=doLogin;
-  document.getElementById('loginPass').onkeydown=e=>{if(e.key==='Enter')doLogin();};
+  document.getElementById('loginPass').onkeydown=function(e){if(e.key==='Enter')doLogin();};
+}
+
+function renderChangePassword(msg) {
+  app.innerHTML=
+    '<div class="login-shell">'+
+      '<div class="card login-card" style="margin-top:18px">'+
+        '<h3 style="margin-bottom:8px; font-weight:800;">Cambio obligatorio de contraseña</h3>'+
+        '<p class="muted small" style="margin-bottom:16px;">Por seguridad, debes cambiar tu contraseña inicial antes de continuar.</p>'+
+        (msg?'<div class="callout" style="border-left: 4px solid var(--danger); margin-bottom:14px"><div class="callout-title" style="color:var(--danger); font-size:14px;">Error</div><div class="muted small">'+esc(msg)+'</div></div>':'')+
+        '<div class="form-grid" style="grid-template-columns: 1fr;">'+
+          '<div class="field"><label for="newPass">Nueva Contraseña</label><input id="newPass" type="password"></div>'+
+          '<div class="field" style="margin-top:8px;"><button class="btn btn-primary" id="btnChangePass" style="width:100%">Guardar y continuar</button></div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    
+  const doChange = function() {
+    const btn = document.getElementById('btnChangePass');
+    const pwd = document.getElementById('newPass').value;
+    if(pwd.length < 6) { renderChangePassword('La contraseña debe tener al menos 6 caracteres.'); return; }
+    btnLoad(btn, 'Guardando...');
+    call('changePassword', state.sessionToken, pwd).then(function(){
+      state.user.mustChange = false;
+      loadBootstrap();
+    }).catch(function(err){
+      btnReset(btn);
+      renderChangePassword(err.message || 'Error al cambiar contraseña.');
+    });
+  };
+  document.getElementById('btnChangePass').onclick = doChange;
+  document.getElementById('newPass').onkeydown = function(e){ if(e.key==='Enter') doChange(); };
 }
 
 /* ── Bootstrap ─────────────────────────────────────── */
-async function loadBootstrap(){
-  app.innerHTML=`<div class="container"><div class="card">Cargando panel...</div></div>`;
-  try{
-    state.bootstrap=await call('getBootstrap',state.sessionToken);
-    state.user=state.bootstrap.user;
-    state.statsCacheByEdition={}; // limpiar cache al recargar
-    renderPanel();
-  }catch(err){ clearSession(); renderLogin(err.message||'Sesión expirada.'); }
+function loadBootstrap(){
+  app.innerHTML='<div class="container"><div class="card"><div class="loading-row"><span class="spinner"></span> Cargando panel...</div></div></div>';
+  call('getBootstrap',state.sessionToken).then(function(bs){
+    state.bootstrap=bs;
+    state.user=bs.user;
+    if (state.user.mustChange) {
+      renderChangePassword();
+    } else {
+      state.statsCacheByEdition={};
+      state.responsesData=null;
+      renderPanel();
+    }
+  }).catch(function(err){ clearSession(); renderLogin(err.message||'Sesión expirada.'); });
 }
 
 /* ── Panel shell ───────────────────────────────────── */
 function renderPanel(){
   const b=state.bootstrap;
   const tabs=[
-    {id:'dashboard',label:'📊 Resumen'},
-    {id:'responses',label:'📋 Respuestas'},
-    {id:'invitations',label:'✉️ Invitaciones'},
-    {id:'editions',label:'📅 Ediciones'}
+    {id:'dashboard',icon:'📊',label:'Resumen'},
+    {id:'responses',icon:'📋',label:'Respuestas'},
+    {id:'invitations',icon:'✉️',label:'Invitaciones'},
+    {id:'editions',icon:'📅',label:'Ediciones'}
   ];
   if(b.user.role==='admin'){
-    tabs.push({id:'users',label:'👤 Usuarios'});
-    tabs.push({id:'config',label:'⚙️ Configuración'});
+    tabs.push({id:'users',icon:'👤',label:'Usuarios'});
+    tabs.push({id:'config',icon:'⚙️',label:'Configuración'});
   }
-  app.innerHTML=`
-    <div class="topbar">
-      <div class="brand">
-        <h1>${esc(b.orgName)} · ${esc(b.appName)}</h1>
-        <div class="sub">${esc(b.user.displayName)} · ${esc(b.user.role)} · Edición activa: <strong>${esc(b.activeEdition)}</strong></div>
-      </div>
-      <div class="row">
-        ${b.user.role==='admin'?`<button class="btn secondary" id="btnRebuild">↻ Recalcular analítica</button>`:''}
-        <button class="btn ghost" id="btnLogout">Salir</button>
-      </div>
-    </div>
-    <div class="container">
-      <div class="tabs" id="tabs">
-        ${tabs.map(t=>`<button class="tab${state.activeTab===t.id?' active':''}" data-tab="${t.id}">${t.label}</button>`).join('')}
-      </div>
-      <div id="view"></div>
-    </div>`;
+  app.innerHTML=
+    '<div class="app-shell" id="appShell">'+
+      '<header class="app-header">'+
+        '<div class="brand">'+
+          '<div class="logo">PARACEL</div>'+
+          '<div class="brand-text">'+
+            '<div class="brand-title">'+esc(b.orgName)+' · '+esc(b.appName)+'</div>'+
+            '<div class="brand-subtitle">'+esc(b.user.displayName)+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="header-right">'+
+          '<div class="edition-pill" title="Edición activa">'+esc(b.activeEdition)+'</div>'+
+          '<span class="badge" style="margin-right:8px; border:none; background:var(--primary); color:white;">'+esc(b.user.role)+'</span>'+
+          (b.user.role==='admin'?'<button class="btn btn-ghost" id="btnRebuild" title="Recalcular analítica">↻</button>':'')+
+          '<button class="btn btn-ghost" id="btnLogout" style="color:var(--danger);">Salir</button>'+
+        '</div>'+
+      '</header>'+
+      '<aside class="app-nav" id="appNav">'+
+        tabs.map(function(t){
+          return '<button class="nav-item'+(state.activeTab===t.id?' active':'')+'" data-tab="'+t.id+'">'+
+                   '<span class="nav-icon">'+t.icon+'</span><span>'+t.label+'</span>'+
+                 '</button>';
+        }).join('')+
+      '</aside>'+
+      '<main class="app-main" id="view"></main>'+
+    '</div>';
 
-  document.getElementById('tabs').addEventListener('click',e=>{
-    const btn=e.target.closest('.tab'); if(!btn) return;
-    [...document.querySelectorAll('.tab')].forEach(t=>t.classList.remove('active'));
+  document.getElementById('appNav').addEventListener('click',function(e){
+    var target = e && e.target ? e.target : null;
+    if (target && target.nodeType === 3) target = target.parentElement;
+    var btn = null;
+    if (target) {
+      if (target.closest) {
+        btn = target.closest('.nav-item');
+      } else {
+        var el = target;
+        while (el && el !== document.body) {
+          if (el.classList && el.classList.contains('nav-item')) { btn = el; break; }
+          el = el.parentElement;
+        }
+      }
+    }
+    if(!btn) return;
+    [].forEach.call(document.querySelectorAll('.nav-item'),function(t){t.classList.remove('active');});
     btn.classList.add('active');
     state.activeTab=btn.dataset.tab;
     renderCurrentTab();
   });
-  document.getElementById('btnLogout').onclick=async()=>{
-    try{await call('logout',state.sessionToken);}catch(_){}
-    clearSession(); renderLogin();
+  document.getElementById('btnLogout').onclick=function(){
+    call('logout',state.sessionToken).catch(function(){}).then(function(){ clearSession(); renderLogin(); });
   };
   const rb=document.getElementById('btnRebuild');
-  if(rb) rb.onclick=async()=>{
-    rb.disabled=true; rb.textContent='Recalculando...';
-    try{
-      await call('rebuildAnalytics');
+  if(rb) rb.onclick=function(){
+    const self=this;
+    btnLoad(self,'↻...');
+    call('rebuildAnalytics').then(function(){
       state.statsCacheByEdition={};
+      state.responsesData=null;
+      toast('Analítica recalculada correctamente','success');
       renderCurrentTab();
-    }catch(err){alert(err.message||err);}
-    rb.disabled=false; rb.textContent='↻ Recalcular analítica';
+      btnReset(self);
+    }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
   };
   renderCurrentTab();
 }
 
 function renderCurrentTab(){
   const view=document.getElementById('view');
-  Object.keys(CHARTS).forEach(k=>destroyChart(k));
-
-  const tabHandlers = {
-    dashboard: renderDashboard,
-    responses: renderResponses,
-    invitations: renderInvitations,
-    users: renderUsers,
-    config: renderConfig,
-    editions: renderEditions
+  Object.keys(CHARTS).forEach(function(k){destroyChart(k);});
+  const tabHandlers={
+    dashboard:renderDashboard, responses:renderResponses,
+    invitations:renderInvitations, users:renderUsers,
+    config:renderConfig, editions:renderEditions
   };
-  const handler = tabHandlers[state.activeTab];
-  if(!handler){
-    view.innerHTML='<div class="card"><p class="muted">Vista no disponible.</p></div>';
-    return;
-  }
-  Promise.resolve(handler(view)).catch(err=>setTabError(view, err, 'No se pudo cargar la vista seleccionada.'));
+  const handler=tabHandlers[state.activeTab];
+  if(!handler){ view.innerHTML='<div class="card"><p class="muted">Vista no disponible.</p></div>'; return; }
+  Promise.resolve(handler(view)).catch(function(err){setTabError(view,err,'No se pudo cargar la vista seleccionada.');});
 }
 
-/* ── DASHBOARD ─────────────────────────────────────── */
-async function renderDashboard(view){
+/* ── DASHBOARD v3 ──────────────────────────────────── */
+function renderDashboard(view){
   const editionKey = state.dashboardEdition || 'ALL';
-  view.innerHTML=`
-    <div class="stats-row">
-      ${[...Array(5)].map(()=>`<div class="skel skel-stat"></div>`).join('')}
-    </div>
-    <div class="charts-3">
-      ${[...Array(3)].map(()=>`<div class="card"><div class="skel skel-chart-sm"></div></div>`).join('')}
-    </div>
-    <div class="charts-2">
-      ${[...Array(2)].map(()=>`<div class="card"><div class="skel skel-chart-lg"></div></div>`).join('')}
-    </div>
-    <div class="charts-2">
-      ${[...Array(2)].map(()=>`<div class="card"><div class="skel skel-chart-sm"></div></div>`).join('')}
-    </div>`;
+  view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando tablero...</div></div>';
 
-  if(!state.statsCacheByEdition[editionKey]){
-    const editionParam = editionKey === 'ALL' ? '' : editionKey;
-    state.statsCacheByEdition[editionKey] = await call('getDashboardSummary', state.sessionToken, editionParam);
+  const loadData = state.statsCacheByEdition[editionKey]
+    ? Promise.resolve(state.statsCacheByEdition[editionKey])
+    : call('getDashboardSummary', state.sessionToken, editionKey==='ALL'?'':editionKey).then(function(d){
+        state.statsCacheByEdition[editionKey]=d; return d;
+      });
+
+  function kpiTile(label, value, sub, cls){
+    return '<div class="kpi'+(cls?' '+cls:'')+'">'+
+      '<div class="kpi-label">'+esc(label)+'</div>'+
+      '<div class="kpi-value">'+esc(value)+'</div>'+
+      '<div class="muted small mt-8">'+esc(sub||'')+'</div>'+
+    '</div>';
   }
 
-  const s = state.statsCacheByEdition[editionKey] || {};
-  const editionOptions = [{label:'Todas las ediciones', value:'ALL'}].concat(
-    (s.edicionesDisponibles || []).map(x => ({label:x.label, value:x.label, count:x.value}))
-  );
+  function percent(a,b){ return b?Math.round(a*100/b):0; }
 
-  view.innerHTML=`
-    <div class="card" style="margin-bottom:16px">
-      <div class="spread">
-        <div>
-          <h3 style="margin-bottom:4px">Tablero ejecutivo</h3>
-          <p class="muted" style="font-size:12px">Vista consolidada de indicadores operativos y de calidad.</p>
-        </div>
-        <div class="row">
-          <label class="label" style="margin:0">Edicion</label>
-          <select class="select" id="dashEdition" style="min-width:210px">
-            ${editionOptions.map(opt=>`<option value="${esc(opt.value)}" ${state.dashboardEdition===opt.value?'selected':''}>${esc(opt.label)}${opt.count!=null?` (${opt.count})`:''}</option>`).join('')}
-          </select>
-          <button class="btn secondary" id="dashRefresh">Actualizar</button>
-        </div>
-      </div>
-    </div>
+  function renderEditionTable(rows){
+    rows = Array.isArray(rows)?rows:[];
+    if(!rows.length) return '<p class="muted">Sin datos por edición.</p>';
+    return ''+
+      '<div class="table-wrap" style="max-height:340px">'+
+        '<table>'+
+          '<thead><tr>'+
+            '<th>Edición</th><th>Total</th><th>Directos</th><th>Indirectos</th><th>IPS</th><th>Calidad OK</th><th>Edad prom.</th>'+
+          '</tr></thead>'+
+          '<tbody>'+
+            rows.map(function(r){
+              return '<tr>'+
+                '<td><strong>'+esc(r.edicion)+'</strong></td>'+
+                '<td>'+n(r.total).toLocaleString()+'</td>'+
+                '<td>'+n(r.directos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.directos),n(r.total))+'%)</span></td>'+
+                '<td>'+n(r.indirectos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.indirectos),n(r.total))+'%)</span></td>'+
+                '<td>'+n(r.conIpsPct)+'%</td>'+
+                '<td>'+n(r.calidadOkPct)+'%</td>'+
+                '<td>'+esc(r.edadProm)+'</td>'+
+              '</tr>';
+            }).join('')+
+          '</tbody>'+
+        '</table>'+
+      '</div>';
+  }
 
-    <div class="stats-row">
-      <div class="stat-card c-teal"><div class="stat-icon">#</div><div class="stat-v">${n(s.total).toLocaleString()}</div><div class="stat-l">Registros analiticos</div></div>
-      <div class="stat-card c-indigo"><div class="stat-icon">D</div><div class="stat-v">${n(s.directos).toLocaleString()}</div><div class="stat-l">Colaboradores directos</div></div>
-      <div class="stat-card c-amber"><div class="stat-icon">I</div><div class="stat-v">${n(s.indirectos).toLocaleString()}</div><div class="stat-l">Colaboradores indirectos</div></div>
-      <div class="stat-card c-emerald"><div class="stat-icon">IPS</div><div class="stat-v">${n(s.conIpsPct)}%</div><div class="stat-l">Cobertura IPS</div></div>
-      <div class="stat-card c-rose"><div class="stat-icon">Edad</div><div class="stat-v">${n(s.edadProm)}</div><div class="stat-l">Edad promedio</div></div>
-    </div>
+  function renderIpsTipoTable(rows){
+    rows = Array.isArray(rows)?rows:[];
+    if(!rows.length) return '<p class="muted">Sin datos de IPS por tipo.</p>';
+    return ''+
+      '<div class="table-wrap" style="max-height:340px">'+
+        '<table>'+
+          '<thead><tr><th>Tipo</th><th>Con IPS</th><th>Sin IPS</th><th>IPS</th></tr></thead>'+
+          '<tbody>'+
+            rows.map(function(r){
+              const tot=n(r.total);
+              const pct=tot?Math.round(n(r.conIps)*100/tot):0;
+              return '<tr>'+
+                '<td><strong>'+esc(r.tipo)+'</strong></td>'+
+                '<td>'+n(r.conIps).toLocaleString()+'</td>'+
+                '<td>'+n(r.sinIps).toLocaleString()+'</td>'+
+                '<td>'+pct+'%</td>'+
+              '</tr>';
+            }).join('')+
+          '</tbody>'+
+        '</table>'+
+      '</div>';
+  }
 
-    <div class="charts-3">
-      <div class="card"><div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">${n(s.total)} total</span></div><canvas id="cTipo" height="220"></canvas></div>
-      <div class="card"><div class="chart-hd"><h3>Sexo</h3><span class="chart-total">${n(s.total)} total</span></div><canvas id="cSexo" height="220"></canvas></div>
-      <div class="card"><div class="chart-hd"><h3>Cobertura IPS actual</h3><span class="chart-total">${n(s.conIpsPct)}% con IPS</span></div><canvas id="cIps" height="220"></canvas></div>
-    </div>
+  function renderTopItemsTable(items){
+    items = Array.isArray(items)?items:[];
+    if(!items.length) return '<p class="muted">Sin datos.</p>';
+    const sum=items.reduce(function(acc,x){return acc+n(x.value);},0);
+    return ''+
+      '<div class="table-wrap" style="max-height:340px">'+
+        '<table>'+
+          '<thead><tr><th>Etiqueta</th><th>Conteo</th><th>%</th></tr></thead>'+
+          '<tbody>'+
+            items.map(function(x){
+              const pct=sum?Math.round(n(x.value)*100/sum):0;
+              return '<tr>'+
+                '<td>'+esc(x.label)+'</td>'+
+                '<td>'+n(x.value).toLocaleString()+'</td>'+
+                '<td>'+pct+'%</td>'+
+              '</tr>';
+            }).join('')+
+          '</tbody>'+
+        '</table>'+
+      '</div>';
+  }
 
-    <div class="charts-2">
-      <div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><canvas id="cDept" height="360"></canvas></div>
-      <div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">${n(s.total)} resp.</span></div><canvas id="cSal" height="360"></canvas></div>
-    </div>
+  return loadData.then(function(s){
+    s = s || {};
+    const total=n(s.total);
+    const directos=n(s.directos);
+    const indirectos=n(s.indirectos);
+    const ipsPct=n(s.conIpsPct);
+    const conIps=n(s.conIps);
+    const edadProm=n(s.edadProm);
+    const calidadOkPct=n(s.calidadOkPct);
+    const ok=n(s.calidadOk);
+    const crit=n(s.calidadCritico);
+    const rev=n(s.calidadRevisar);
+    const flagsProm=n(s.nFlagsProm);
+    const last7=n(s.last7);
+    const last30=n(s.last30);
+    const delta=n(s.delta30Pct);
+    const rango=s.rangoFechas||{};
+    const rangoTxt=(rango.min&&rango.max)?(rango.min+' → '+rango.max):'—';
 
-    <div class="charts-2">
-      <div class="card"><div class="chart-hd"><h3>Respuestas por edicion</h3></div><canvas id="cEdic" height="200"></canvas></div>
-      <div class="card"><div class="chart-hd"><h3>Grupo etario</h3></div><canvas id="cEdad" height="200"></canvas></div>
-    </div>`;
+    const editionOptions = [{label:'Todas las ediciones', value:'ALL'}].concat(
+      (s.edicionesDisponibles||[]).map(function(x){return {label:x.label, value:x.label, count:x.value};})
+    );
+    const topDept=(s.porDeptResidencia&&s.porDeptResidencia[0])?s.porDeptResidencia[0]:null;
+    const topEmp=(s.topEmpresasIndirecto&&s.topEmpresasIndirecto[0])?s.topEmpresasIndirecto[0]:null;
+    const pctDir=total?Math.round(directos*100/total):0;
+    const pctInd=total?Math.round(indirectos*100/total):0;
+    const deltaTxt=(delta>=0?'+':'')+delta+'%';
+    const deltaBadge='badge '+(delta>=10?'ok':delta>=0?'warn':'danger');
 
-  document.getElementById('dashEdition').onchange = (e) => {
-    state.dashboardEdition = e.target.value || 'ALL';
-    renderDashboard(view);
-  };
-  document.getElementById('dashRefresh').onclick = async () => {
-    delete state.statsCacheByEdition[state.dashboardEdition || 'ALL'];
-    await renderDashboard(view);
-  };
+    view.innerHTML=
+      '<div class="card" style="margin-bottom:16px">'+
+        '<div class="spread">'+
+          '<div>'+
+            '<h3 style="margin-bottom:6px">Tablero ejecutivo</h3>'+
+            '<p class="muted" style="font-size:12px">Rango de fechas: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros analíticos.</p>'+
+          '</div>'+
+          '<div class="row">'+
+            '<label class="label" style="margin:0">Edición</label>'+
+            '<select class="select" id="dashEdition" style="min-width:210px">'+
+              editionOptions.map(function(opt){return '<option value="'+esc(opt.value)+'"'+(state.dashboardEdition===opt.value?' selected':'')+'>'+esc(opt.label)+(opt.count!=null?' ('+opt.count+')':'')+'</option>';}).join('')+
+            '</select>'+
+            '<button class="btn secondary" id="dashRefresh">↻ Actualizar</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">'+
+          '<span class="badge info">Directos: '+pctDir+'%</span>'+
+          '<span class="badge info">Indirectos: '+pctInd+'%</span>'+
+          (topDept?'<span class="badge muted">Top dpto.: '+esc(topDept.label)+' ('+n(topDept.value)+')</span>':'')+
+          (topEmp?'<span class="badge muted">Top empresa: '+esc(topEmp.label)+' ('+n(topEmp.value)+')</span>':'')+
+          '<span class="'+deltaBadge+'">30 días: '+last30+' ('+deltaTxt+')</span>'+
+        '</div>'+
+      '</div>'+
 
-  requestAnimationFrame(() => {
-    donut('cTipo', safeItems(s.porTipo, 'Sin dato'), ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
-    donut('cSexo', safeItems(s.porSexo, 'Sin dato'), ['#3b82f6','#ec4899','#a3a3a3']);
-    donut('cIps', safeItems(s.porIpsActual, 'Sin dato'), ['#059669','#f43f5e','#a3a3a3']);
-    hbar('cDept', safeItems(s.porDeptResidencia, 'Sin dato'), TEAL_GRAD);
-    const salItems = safeItems(s.porSalario, 'Sin dato').map(x=>({label:shortSalario(x.label),value:x.value}));
-    hbar('cSal', salItems, AMBER_GRAD);
-    vbar('cEdic', safeItems(s.porEdicion, 'Sin dato'), ['#0f766e','#14b8a6','#6366f1']);
-    hbar('cEdad', safeItems(s.porGrupoEdad, 'Sin dato'), TEAL_GRAD);
+      '<div class="kpi-row">'+
+        kpiTile('Registros', total.toLocaleString(), (state.dashboardEdition==='ALL'?'Todas las ediciones':'Edición '+state.dashboardEdition), 'emph')+
+        kpiTile('Calidad OK', calidadOkPct+'%', ok.toLocaleString()+' OK · '+rev.toLocaleString()+' revisar · '+crit.toLocaleString()+' crítico')+
+        kpiTile('Cobertura IPS', ipsPct+'%', conIps.toLocaleString()+' con IPS')+
+        kpiTile('Edad promedio', edadProm, 'Rango válido 15–80')+
+        kpiTile('Últimos 7 días', last7, 'Actividad reciente')+
+        kpiTile('Flags promedio', flagsProm, 'Por registro')+
+      '</div>'+
+
+      '<div class="charts-2">'+
+        '<div class="card"><div class="chart-hd"><h3>Tendencia mensual</h3><span class="chart-total">últimos '+(Array.isArray(s.serieMes)?s.serieMes.length:0)+'</span></div><canvas id="cSerieMes" height="240"></canvas></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Directos vs indirectos</h3><span class="chart-total">por edición</span></div><canvas id="cTipoEd" height="240"></canvas></div>'+
+      '</div>'+
+
+      '<div class="charts-2">'+
+        '<div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><canvas id="cDept" height="360"></canvas></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Empresas contratistas (indirectos)</h3><span class="chart-total">top 12</span></div><canvas id="cEmp" height="360"></canvas></div>'+
+      '</div>'+
+
+      '<div class="charts-2">'+
+        '<div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">'+total+' resp.</span></div><canvas id="cSal" height="320"></canvas></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Calidad por edición</h3><span class="chart-total">OK / Revisar / Crítico</span></div><canvas id="cCalEd" height="320"></canvas></div>'+
+      '</div>'+
+
+      '<div class="charts-2">'+
+        '<div class="card"><div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">'+total+' total</span></div><canvas id="cTipo" height="220"></canvas></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Estado de calidad</h3><span class="chart-total">'+total+' total</span></div><canvas id="cCalidad" height="220"></canvas></div>'+
+      '</div>'+
+
+      '<div class="card" style="margin-top:18px">'+
+        '<div class="spread" style="margin-bottom:12px">'+
+          '<h3 style="margin-bottom:0">Comparativo por edición</h3>'+
+          '<span class="badge info">'+(Array.isArray(s.editionStats)?s.editionStats.length:0)+' ediciones</span>'+
+        '</div>'+
+        renderEditionTable(s.editionStats)+
+      '</div>'+
+
+      '<div class="charts-2" style="margin-top:18px">'+
+        '<div class="card">'+
+          '<div class="spread" style="margin-bottom:12px">'+
+            '<h3 style="margin-bottom:0">IPS por tipo</h3>'+
+            '<span class="badge info">'+(Array.isArray(s.ipsPorTipo)?s.ipsPorTipo.length:0)+'</span>'+
+          '</div>'+
+          renderIpsTipoTable(s.ipsPorTipo)+
+        '</div>'+
+        '<div class="card">'+
+          '<div class="spread" style="margin-bottom:12px">'+
+            '<h3 style="margin-bottom:0">Top empresas (indirectos)</h3>'+
+            '<span class="badge info">'+(Array.isArray(s.topEmpresasIndirecto)?s.topEmpresasIndirecto.length:0)+'</span>'+
+          '</div>'+
+          renderTopItemsTable(s.topEmpresasIndirecto)+
+        '</div>'+
+      '</div>';
+
+    document.getElementById('dashEdition').onchange=function(e){
+      state.dashboardEdition=e.target.value||'ALL'; renderDashboard(view);
+    };
+    document.getElementById('dashRefresh').onclick=function(){
+      delete state.statsCacheByEdition[state.dashboardEdition||'ALL'];
+      renderDashboard(view);
+    };
+
+    requestAnimationFrame(function(){
+      const serie=Array.isArray(s.serieMes)?s.serieMes:[];
+      lineChart('cSerieMes', serie.map(function(x){return x.label;}), serie.map(function(x){return n(x.value);}), '#0f766e');
+
+      const te=Array.isArray(s.tipoPorEdicion)?s.tipoPorEdicion:[];
+      stackedBar('cTipoEd',
+        te.map(function(x){return x.edicion;}),
+        [
+          {label:'Directos', data:te.map(function(x){return n(x.directos);}), backgroundColor:'#6366f1'},
+          {label:'Indirectos', data:te.map(function(x){return n(x.indirectos);}), backgroundColor:'#0f766e'}
+        ]
+      );
+
+      hbar('cDept', safeItems(s.porDeptResidencia), TEAL_GRAD);
+      hbar('cEmp', safeItems(s.topEmpresasIndirecto,'Sin dato'), INDIGO_GRAD, {max:undefined});
+      const salItems=safeItems(s.porSalario).map(function(x){return {label:shortSalario(x.label),value:x.value};});
+      hbar('cSal', salItems, AMBER_GRAD);
+
+      const ce=Array.isArray(s.calidadPorEdicion)?s.calidadPorEdicion:[];
+      stackedBar('cCalEd',
+        ce.map(function(x){return x.edicion;}),
+        [
+          {label:'OK', data:ce.map(function(x){return n(x.ok);}), backgroundColor:'#16a34a'},
+          {label:'Revisar', data:ce.map(function(x){return n(x.revisar);}), backgroundColor:'#d97706'},
+          {label:'Crítico', data:ce.map(function(x){return n(x.critico);}), backgroundColor:'#dc2626'}
+        ]
+      );
+
+      donut('cTipo', safeItems(s.porTipo), ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
+      donut('cCalidad', safeItems(s.porEstadoCalidad), ['#16a34a','#d97706','#dc2626','#94a3b8']);
+    });
   });
 }
 
-/* ── RESPUESTAS ────────────────────────────────────── */
-async function renderResponses(view){
-  view.innerHTML=`<div class="card"><p class="muted">Cargando respuestas...</p></div>`;
-  const rowsRaw=await call('listResponses',state.sessionToken,200);
-  const rows=Array.isArray(rowsRaw)?rowsRaw:[];
-  const cols=[
-    {k:'edicion',l:'Edición'},{k:'fecha_encuesta',l:'Fecha'},
-    {k:'tipo_colaborador',l:'Tipo'},{k:'sexo',l:'Sexo'},{k:'edad',l:'Edad'},
-    {k:'departamento_residencia',l:'Dpto. residencia'},
-    {k:'salario_actual_banda',l:'Salario actual'},{k:'descuento_ips_actual',l:'IPS'},
-    {k:'empresa_contratista',l:'Empresa'},{k:'estado_calidad',l:'Calidad'},{k:'n_flags',l:'Flags'},
-    {k:'respondente_id',l:'ID anon.'}
-  ];
-  view.innerHTML=`
-    <div class="card">
-      <div class="spread" style="margin-bottom:14px">
-        <div>
-          <h3 style="margin-bottom:4px">Base analítica — vista anonimizada</h3>
-          <p class="muted" style="font-size:12px">Últimos 200 registros · Sin PII · Ordenados por fecha desc.</p>
-        </div>
-        <span class="badge info">${rows.length} filas</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>${cols.map(c=>`<th>${esc(c.l)}</th>`).join('')}</tr></thead>
-          <tbody>${rows.map(r=>`<tr>${cols.map(c=>{
-            if(c.k==='estado_calidad') return `<td>${statusBadge(r[c.k])}</td>`;
-            if(c.k==='n_flags')        return `<td>${n(r[c.k])>0?`<span class="badge ${n(r[c.k])>=3?'danger':'warn'}">${r[c.k]}</span>`:r[c.k]}</td>`;
-            if(c.k==='descuento_ips_actual') return `<td>${statusBadge(r[c.k])}</td>`;
-            if(c.k==='salario_actual_banda') return `<td style="font-size:11px">${esc(shortSalario(r[c.k]||''))}</td>`;
-            return `<td>${esc(r[c.k])}</td>`;
-          }).join('')}</tr>`).join('')}</tbody>
-        </table>
-      </div>
-    </div>`;
+/* ── RESPUESTAS v2 ─────────────────────────────────── */
+function renderResponses(view){
+  view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando respuestas...</div></div>';
+
+  const doRender = function(rows){
+    state.responsesData = rows;
+    const cols=[
+      {k:'edicion',l:'Edición',s:1},{k:'fecha_encuesta',l:'Fecha',s:1},
+      {k:'tipo_colaborador',l:'Tipo',s:1},{k:'sexo',l:'Sexo',s:1},
+      {k:'edad',l:'Edad',s:1},{k:'departamento_residencia',l:'Dpto.',s:1},
+      {k:'salario_actual_banda',l:'Salario',s:1},{k:'descuento_ips_actual',l:'IPS',s:1},
+      {k:'empresa_contratista',l:'Empresa',s:1},{k:'estado_calidad',l:'Calidad',s:1},
+      {k:'n_flags',l:'Flags',s:1},{k:'respondente_id',l:'ID anon.'}
+    ];
+
+    function applyFilters(r){
+      const f=state.responsesFilter;
+      if(f.tipo && r.tipo_colaborador!==f.tipo) return false;
+      if(f.calidad && r.estado_calidad!==f.calidad) return false;
+      if(f.search){
+        const q=f.search.toLowerCase();
+        return cols.some(function(c){return String(r[c.k]||'').toLowerCase().indexOf(q)>-1;});
+      }
+      return true;
+    }
+    function applySort(arr){
+      const sc=state.responsesSort;
+      if(!sc.col) return arr;
+      return arr.slice().sort(function(a,b){
+        return String(a[sc.col]||'').localeCompare(String(b[sc.col]||''))*sc.dir;
+      });
+    }
+    function getRows(){ return applySort(rows.filter(applyFilters)); }
+
+    function renderTable(){
+      const filtered=getRows();
+      const ct=document.getElementById('respCount');
+      if(ct) ct.textContent=filtered.length+' de '+rows.length;
+      const tbody=document.getElementById('respTbody');
+      if(!tbody) return;
+      tbody.innerHTML=filtered.length ? filtered.map(function(r){
+        return '<tr>'+cols.map(function(c){
+          if(c.k==='estado_calidad') return '<td>'+statusBadge(r[c.k])+'</td>';
+          if(c.k==='n_flags') return '<td>'+(n(r[c.k])>0?'<span class="badge '+(n(r[c.k])>=3?'danger':'warn')+'">'+r[c.k]+'</span>':r[c.k])+'</td>';
+          if(c.k==='descuento_ips_actual') return '<td>'+statusBadge(r[c.k])+'</td>';
+          if(c.k==='salario_actual_banda') return '<td style="font-size:11px">'+esc(shortSalario(r[c.k]||''))+'</td>';
+          if(c.k==='respondente_id') return '<td class="code">'+esc(String(r[c.k]||'').slice(0,12))+'…</td>';
+          return '<td>'+esc(r[c.k])+'</td>';
+        }).join('')+'</tr>';
+      }).join('') : '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:24px" class="muted">Sin resultados para los filtros aplicados.</td></tr>';
+
+      [].forEach.call(document.querySelectorAll('th.sortable'),function(th){
+        th.classList.remove('sort-asc','sort-desc');
+        if(th.dataset.col===state.responsesSort.col)
+          th.classList.add(state.responsesSort.dir===1?'sort-asc':'sort-desc');
+      });
+    }
+
+    const tipos=[...new Set(rows.map(function(r){return r.tipo_colaborador;}).filter(Boolean))];
+    const calidades=[...new Set(rows.map(function(r){return r.estado_calidad;}).filter(Boolean))];
+
+    view.innerHTML=
+      '<div class="card">'+
+        '<div class="spread" style="margin-bottom:14px">'+
+          '<div>'+
+            '<h3 style="margin-bottom:4px">Base analítica — vista anonimizada</h3>'+
+            '<p class="muted" style="font-size:12px">Últimos 500 registros · Sin PII · Ordenados por fecha desc.</p>'+
+          '</div>'+
+          '<div class="row">'+
+            '<span class="badge info" id="respCount">'+rows.length+' filas</span>'+
+            '<button class="btn secondary" id="btnExportResp">⬇ Exportar CSV</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="filter-row">'+
+          '<input class="input search-input" id="respSearch" placeholder="🔍 Buscar en todos los campos..." value="'+esc(state.responsesFilter.search)+'">'+
+          '<select class="select filter-sel" id="respTipo">'+
+            '<option value="">Todos los tipos</option>'+
+            tipos.map(function(t){return '<option value="'+esc(t)+'"'+(state.responsesFilter.tipo===t?' selected':'')+'>'+esc(t)+'</option>';}).join('')+
+          '</select>'+
+          '<select class="select filter-sel" id="respCalidad">'+
+            '<option value="">Toda calidad</option>'+
+            calidades.map(function(c){return '<option value="'+esc(c)+'"'+(state.responsesFilter.calidad===c?' selected':'')+'>'+esc(c)+'</option>';}).join('')+
+          '</select>'+
+          '<button class="btn ghost" id="btnClearFilter">Limpiar</button>'+
+        '</div>'+
+        '<div class="table-wrap">'+
+          '<table>'+
+            '<thead><tr>'+
+              cols.map(function(c){return c.s?'<th class="sortable" data-col="'+esc(c.k)+'">'+esc(c.l)+'</th>':'<th>'+esc(c.l)+'</th>';}).join('')+
+            '</tr></thead>'+
+            '<tbody id="respTbody"></tbody>'+
+          '</table>'+
+        '</div>'+
+      '</div>';
+
+    renderTable();
+
+    document.getElementById('respSearch').oninput=function(e){
+      state.responsesFilter.search=e.target.value; renderTable();
+    };
+    document.getElementById('respTipo').onchange=function(e){
+      state.responsesFilter.tipo=e.target.value; renderTable();
+    };
+    document.getElementById('respCalidad').onchange=function(e){
+      state.responsesFilter.calidad=e.target.value; renderTable();
+    };
+    document.getElementById('btnClearFilter').onclick=function(){
+      state.responsesFilter={search:'',tipo:'',calidad:''};
+      document.getElementById('respSearch').value='';
+      document.getElementById('respTipo').value='';
+      document.getElementById('respCalidad').value='';
+      renderTable();
+    };
+    [].forEach.call(document.querySelectorAll('th.sortable'),function(th){
+      th.onclick=function(){
+        const col=this.dataset.col;
+        if(state.responsesSort.col===col){ state.responsesSort.dir*=-1; }
+        else{ state.responsesSort.col=col; state.responsesSort.dir=1; }
+        renderTable();
+      };
+    });
+    document.getElementById('btnExportResp').onclick=function(){
+      const filtered=getRows();
+      exportCsv(filtered, cols.map(function(c){return {k:c.k,l:c.l};}), 'respuestas_analitica.csv');
+      toast('CSV exportado: '+filtered.length+' registros','success');
+    };
+  };
+
+  if(state.responsesData){
+    doRender(state.responsesData);
+    return Promise.resolve();
+  }
+  return call('listResponses',state.sessionToken,500).then(function(rowsRaw){
+    doRender(Array.isArray(rowsRaw)?rowsRaw:[]);
+  });
 }
 
-/* ── INVITACIONES ──────────────────────────────────── */
-async function renderInvitations(view){
-  view.innerHTML=`<div class="card"><p class="muted">Cargando...</p></div>`;
-  const rowsRaw=await call('listInvitations',state.sessionToken,500);
-  const rows=Array.isArray(rowsRaw)?rowsRaw:[];
+/* ── INVITACIONES v2 ───────────────────────────────── */
+function renderInvitations(view){
+  view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando...</div></div>';
+  return call('listInvitations',state.sessionToken,1000).then(function(rowsRaw){
+    const rows=Array.isArray(rowsRaw)?rowsRaw:[];
+    const cnt={generado:0,enviado:0,abierto:0,usado:0,total:rows.length};
+    rows.forEach(function(r){
+      const e=String(r.estado||'').toLowerCase();
+      if(e==='generado')cnt.generado++;
+      else if(e==='enviado')cnt.enviado++;
+      else if(e==='abierto')cnt.abierto++;
+      else if(e==='usado')cnt.usado++;
+    });
 
-  // Conteos rápidos
-  const cnt={generado:0,enviado:0,abierto:0,usado:0,total:rows.length};
-  rows.forEach(r=>{
-    const e=String(r.estado||'').toLowerCase();
-    if(e==='generado')cnt.generado++;
-    else if(e==='enviado')cnt.enviado++;
-    else if(e==='abierto')cnt.abierto++;
-    else if(e==='usado')cnt.usado++;
+    let filtroEstado='';
+    function getFiltered(){ return filtroEstado?rows.filter(function(r){return r.estado===filtroEstado;}):rows; }
+
+    function renderInvTable(){
+      const filtered=getFiltered();
+      const ct=document.getElementById('invCount'); if(ct) ct.textContent=filtered.length+' de '+rows.length;
+      const tb=document.getElementById('invTbody'); if(!tb) return;
+      tb.innerHTML=filtered.length?filtered.map(function(r){
+        return '<tr>'+
+          '<td>'+esc(r.edition_id)+'</td>'+
+          '<td>'+esc(r.email)+'</td>'+
+          '<td>'+statusBadge(r.estado)+'</td>'+
+          '<td style="font-size:11px">'+esc(r.sent_at||'—')+'</td>'+
+          '<td style="font-size:11px">'+esc(r.opened_at||'—')+'</td>'+
+          '<td style="font-size:11px">'+esc(r.used_at||'—')+'</td>'+
+          '<td>'+(r.url_encuesta?'<button class="btn ghost btn-xs" onclick="window._copyInv(\''+esc(r.url_encuesta||'')+'\')">📋 Copiar</button>':'<span class="muted">—</span>')+'</td>'+
+        '</tr>';
+      }).join('') : '<tr><td colspan="7" style="text-align:center;padding:24px" class="muted">Sin registros para este filtro.</td></tr>';
+    }
+
+    view.innerHTML=
+      '<div class="grid cols-2" style="margin-bottom:18px">'+
+        '<div class="card">'+
+          '<h3>Generar y enviar invitaciones</h3>'+
+          '<div class="form-grid">'+
+            '<div><label class="label">Edición</label><input class="input" id="invEdition" value="'+esc(state.bootstrap.activeEdition)+'"></div>'+
+            '<div><label class="label">Tipo de acceso</label><select class="select" id="invTipo"><option value="respondent">Respondente</option></select></div>'+
+            '<div class="full"><label class="label">Correos (uno por línea o separados por coma)</label><textarea class="textarea" id="invEmails" placeholder="correo1@empresa.com&#10;correo2@empresa.com"></textarea></div>'+
+            '<div class="full row">'+
+              '<button class="btn secondary" id="btnGenInv">Generar tokens</button>'+
+              '<button class="btn" id="btnSendInv">Generar y enviar correos</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="card">'+
+          '<h3>Resumen del canal</h3>'+
+          '<div class="stats-row" style="grid-template-columns:repeat(2,1fr)">'+
+            '<div class="stat-card c-teal" style="cursor:pointer" id="btnFiltroAll"><div class="stat-v">'+cnt.total+'</div><div class="stat-l">Total</div></div>'+
+            '<div class="stat-card c-indigo" style="cursor:pointer" id="btnFiltroEnviado"><div class="stat-v">'+cnt.enviado+'</div><div class="stat-l">Enviadas</div></div>'+
+            '<div class="stat-card c-amber" style="cursor:pointer" id="btnFiltroAbierto"><div class="stat-v">'+cnt.abierto+'</div><div class="stat-l">Abiertas</div></div>'+
+            '<div class="stat-card c-emerald" style="cursor:pointer" id="btnFiltroUsado"><div class="stat-v">'+cnt.usado+'</div><div class="stat-l">Usadas</div></div>'+
+          '</div>'+
+          '<p class="muted" style="margin-top:10px;font-size:11px">Haz clic en un estado para filtrar la tabla.</p>'+
+        '</div>'+
+      '</div>'+
+      '<div class="card">'+
+        '<div class="spread" style="margin-bottom:12px">'+
+          '<h3 style="margin-bottom:0">Historial de invitaciones</h3>'+
+          '<div class="row">'+
+            '<span class="badge info" id="invCount">'+rows.length+' registros</span>'+
+            '<select class="select" id="invFiltro" style="width:auto">'+
+              '<option value="">Todos los estados</option>'+
+              '<option value="Generado">Generado</option>'+
+              '<option value="Enviado">Enviado</option>'+
+              '<option value="Abierto">Abierto</option>'+
+              '<option value="Usado">Usado</option>'+
+            '</select>'+
+          '</div>'+
+        '</div>'+
+        '<div class="table-wrap">'+
+          '<table>'+
+            '<thead><tr><th>Edición</th><th>Email</th><th>Estado</th><th>Enviado</th><th>Abierto</th><th>Usado</th><th>Acción</th></tr></thead>'+
+            '<tbody id="invTbody"></tbody>'+
+          '</table>'+
+        '</div>'+
+      '</div>';
+
+    renderInvTable();
+
+    const setFiltro=function(v){
+      filtroEstado=v;
+      const sel=document.getElementById('invFiltro'); if(sel) sel.value=v;
+      renderInvTable();
+    };
+    document.getElementById('invFiltro').onchange=function(e){ filtroEstado=e.target.value; renderInvTable(); };
+    document.getElementById('btnFiltroAll').onclick=function(){ setFiltro(''); };
+    document.getElementById('btnFiltroEnviado').onclick=function(){ setFiltro('Enviado'); };
+    document.getElementById('btnFiltroAbierto').onclick=function(){ setFiltro('Abierto'); };
+    document.getElementById('btnFiltroUsado').onclick=function(){ setFiltro('Usado'); };
+
+    const invAction=function(fn, btn){
+      const data={
+        edition_id:document.getElementById('invEdition').value,
+        tipo_acceso:document.getElementById('invTipo').value,
+        emails:document.getElementById('invEmails').value
+      };
+      if(!data.emails.trim()){ toast('Ingrese al menos un correo.','error'); return; }
+      btnLoad(btn, fn==='sendInvitations'?'Enviando correos...':'Generando tokens...');
+      call(fn,state.sessionToken,data).then(function(res){
+        toast(fn==='sendInvitations'?'Enviados '+(res.total||'')+ ' correos correctamente':'Tokens generados correctamente','success');
+        renderInvitations(view);
+      }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(btn); });
+    };
+    document.getElementById('btnGenInv').onclick=function(){ invAction('createInvitations',this); };
+    document.getElementById('btnSendInv').onclick=function(){ invAction('sendInvitations',this); };
   });
-
-  view.innerHTML=`
-    <div class="grid cols-2" style="margin-bottom:18px">
-      <div class="card">
-        <h3>Generar y enviar invitaciones</h3>
-        <div class="form-grid">
-          <div><label class="label">Edición</label><input class="input" id="invEdition" value="${esc(state.bootstrap.activeEdition)}"></div>
-          <div><label class="label">Tipo de acceso</label><select class="select" id="invTipo"><option value="respondent">Respondente</option></select></div>
-          <div class="full"><label class="label">Correos (uno por línea)</label><textarea class="textarea" id="invEmails" placeholder="correo@empresa.com"></textarea></div>
-          <div class="full row">
-            <button class="btn secondary" id="btnGenInv">Generar tokens</button>
-            <button class="btn" id="btnSendInv">Generar y enviar correos</button>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Resumen del canal</h3>
-        <div class="stats-row" style="grid-template-columns:repeat(2,1fr)">
-          <div class="stat-card c-teal"><div class="stat-v">${cnt.total}</div><div class="stat-l">Total</div></div>
-          <div class="stat-card c-indigo"><div class="stat-v">${cnt.enviado}</div><div class="stat-l">Enviadas</div></div>
-          <div class="stat-card c-amber"><div class="stat-v">${cnt.abierto}</div><div class="stat-l">Abiertas</div></div>
-          <div class="stat-card c-emerald"><div class="stat-v">${cnt.usado}</div><div class="stat-l">Usadas</div></div>
-        </div>
-        <ul class="muted" style="margin-top:12px;padding-left:16px;font-size:12px;line-height:2">
-          <li>Cada enlace es único por persona y edición.</li>
-          <li>El respondente no necesita usuario ni contraseña.</li>
-          <li>La app bloquea el reuso una vez completado el formulario.</li>
-        </ul>
-      </div>
-    </div>
-    <div class="card">
-      <div class="spread" style="margin-bottom:14px">
-        <div><h3 style="margin-bottom:0">Historial de invitaciones</h3></div>
-        <span class="badge info">${rows.length} registros</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Edición</th><th>Email</th><th>Estado</th><th>Enviado</th><th>Abierto</th><th>Usado</th><th>Enlace</th></tr></thead>
-          <tbody>${rows.map(r=>`<tr>
-            <td>${esc(r.edition_id)}</td>
-            <td>${esc(r.email)}</td>
-            <td>${statusBadge(r.estado)}</td>
-            <td style="font-size:12px">${esc(r.sent_at||'—')}</td>
-            <td style="font-size:12px">${esc(r.opened_at||'—')}</td>
-            <td style="font-size:12px">${esc(r.used_at||'—')}</td>
-            <td class="code" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(r.url_encuesta)}</td>
-          </tr>`).join('')}</tbody>
-        </table>
-      </div>
-    </div>`;
-
-  const invAction=async(fn)=>{
-    const data={edition_id:document.getElementById('invEdition').value,tipo_acceso:document.getElementById('invTipo').value,emails:document.getElementById('invEmails').value};
-    if(!data.emails.trim()){alert('Ingrese al menos un correo.');return;}
-    await call(fn,state.sessionToken,data);
-    renderInvitations(view);
-  };
-  document.getElementById('btnGenInv').onclick=()=>invAction('createInvitations');
-  document.getElementById('btnSendInv').onclick=()=>invAction('sendInvitations');
 }
 
 /* ── USUARIOS ──────────────────────────────────────── */
-async function renderUsers(view){
-  view.innerHTML=`<div class="card"><p class="muted">Cargando...</p></div>`;
-  const rows=await call('listUsers',state.sessionToken);
-  view.innerHTML=`
-    <div class="grid cols-2">
-      <div class="card">
-        <h3>Alta o actualización de usuario</h3>
-        <div class="form-grid">
-          <div><label class="label">Usuario</label><input class="input" id="uUser"></div>
-          <div><label class="label">Nombre visible</label><input class="input" id="uName"></div>
-          <div><label class="label">Rol</label>
-            <select class="select" id="uRole"><option value="viewer">viewer</option><option value="admin">admin</option></select>
-          </div>
-          <div><label class="label">Contraseña temporal</label><input class="input" id="uPass" type="password"></div>
-          <div><label class="label">Activo</label>
-            <select class="select" id="uActive"><option value="TRUE">Sí</option><option value="FALSE">No</option></select>
-          </div>
-          <div><label class="label">Forzar cambio</label>
-            <select class="select" id="uMust"><option value="FALSE">No</option><option value="TRUE">Sí</option></select>
-          </div>
-          <div class="full"><label class="label">Notas</label><input class="input" id="uNotes"></div>
-          <div class="full"><button class="btn" id="btnSaveUser">Guardar usuario</button></div>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Usuarios existentes</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Activo</th></tr></thead>
-            <tbody>${rows.map(r=>`<tr>
-              <td><strong>${esc(r.username)}</strong></td>
-              <td>${esc(r.display_name)}</td>
-              <td><span class="badge ${r.role==='admin'?'warn':'info'}">${esc(r.role)}</span></td>
-              <td>${statusBadge(r.active==='TRUE'?'Abierta':r.active)}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
-  document.getElementById('btnSaveUser').onclick=async()=>{
-    await call('saveUser',state.sessionToken,{
-      username:document.getElementById('uUser').value,
-      display_name:document.getElementById('uName').value,
-      role:document.getElementById('uRole').value,
-      password_temporal:document.getElementById('uPass').value,
-      active:document.getElementById('uActive').value,
-      must_change_password:document.getElementById('uMust').value,
-      notes:document.getElementById('uNotes').value
-    });
-    renderUsers(view);
-  };
+function renderUsers(view){
+  view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando...</div></div>';
+  return call('listUsers',state.sessionToken).then(function(rows){
+    view.innerHTML=
+      '<div class="grid cols-2">'+
+        '<div class="card">'+
+          '<h3>Alta o actualización de usuario</h3>'+
+          '<div class="form-grid">'+
+            '<div><label class="label">Usuario</label><input class="input" id="uUser"></div>'+
+            '<div><label class="label">Nombre visible</label><input class="input" id="uName"></div>'+
+            '<div><label class="label">Rol</label><select class="select" id="uRole"><option value="viewer">viewer</option><option value="admin">admin</option></select></div>'+
+            '<div><label class="label">Contraseña temporal</label><input class="input" id="uPass" type="password"></div>'+
+            '<div><label class="label">Activo</label><select class="select" id="uActive"><option value="TRUE">Sí</option><option value="FALSE">No</option></select></div>'+
+            '<div><label class="label">Forzar cambio</label><select class="select" id="uMust"><option value="FALSE">No</option><option value="TRUE">Sí</option></select></div>'+
+            '<div class="full"><label class="label">Notas</label><input class="input" id="uNotes"></div>'+
+            '<div class="full"><button class="btn" id="btnSaveUser">Guardar usuario</button></div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="card">'+
+          '<h3>Usuarios existentes <span class="badge info">'+rows.length+'</span></h3>'+
+          '<div class="table-wrap">'+
+            '<table>'+
+              '<thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Activo</th></tr></thead>'+
+              '<tbody>'+rows.map(function(r){
+                return '<tr>'+
+                  '<td><strong>'+esc(r.username)+'</strong></td>'+
+                  '<td>'+esc(r.display_name)+'</td>'+
+                  '<td><span class="badge '+(r.role==='admin'?'warn':'info')+'">'+esc(r.role)+'</span></td>'+
+                  '<td>'+statusBadge(r.active==='TRUE'?'Abierta':r.active)+'</td>'+
+                '</tr>';
+              }).join('')+'</tbody>'+
+            '</table>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    document.getElementById('btnSaveUser').onclick=function(){
+      const self=this; btnLoad(self,'Guardando...');
+      call('saveUser',state.sessionToken,{
+        username:document.getElementById('uUser').value,
+        display_name:document.getElementById('uName').value,
+        role:document.getElementById('uRole').value,
+        password_temporal:document.getElementById('uPass').value,
+        active:document.getElementById('uActive').value,
+        must_change_password:document.getElementById('uMust').value,
+        notes:document.getElementById('uNotes').value
+      }).then(function(){ toast('Usuario guardado correctamente','success'); renderUsers(view); })
+        .catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
+    };
+  });
 }
 
 /* ── CONFIG ────────────────────────────────────────── */
-async function renderConfig(view){
+function renderConfig(view){
   const cfg=state.bootstrap.config||{};
-  view.innerHTML=`
-    <div class="card">
-      <h3>Configuración operativa</h3>
-      <div class="form-grid">
-        ${Object.keys(cfg).map(k=>`
-          <div>
-            <label class="label">${esc(k)}</label>
-            <input class="input cfg" data-key="${esc(k)}" value="${esc(cfg[k])}">
-          </div>`).join('')}
-        <div class="full"><button class="btn" id="btnSaveCfg">Guardar configuración</button></div>
-      </div>
-    </div>`;
-  document.getElementById('btnSaveCfg').onclick=async()=>{
-    const pairs=[...document.querySelectorAll('.cfg')].map(el=>({clave:el.dataset.key,valor:el.value}));
-    await call('updateConfig',state.sessionToken,pairs);
-    await loadBootstrap();
+  view.innerHTML=
+    '<div class="card">'+
+      '<h3>Configuración operativa</h3>'+
+      '<div class="form-grid">'+
+        Object.keys(cfg).map(function(k){
+          return '<div><label class="label">'+esc(k)+'</label><input class="input cfg" data-key="'+esc(k)+'" value="'+esc(cfg[k])+'"></div>';
+        }).join('')+
+        '<div class="full"><button class="btn" id="btnSaveCfg">Guardar configuración</button></div>'+
+      '</div>'+
+    '</div>';
+  document.getElementById('btnSaveCfg').onclick=function(){
+    const self=this; btnLoad(self,'Guardando...');
+    const pairs=[].slice.call(document.querySelectorAll('.cfg')).map(function(el){return {clave:el.dataset.key,valor:el.value};});
+    call('updateConfig',state.sessionToken,pairs).then(function(){
+      toast('Configuración actualizada','success'); loadBootstrap();
+    }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
   };
 }
 
 /* ── EDICIONES ─────────────────────────────────────── */
-async function renderEditions(view){
-  const rows=await call('listEditions',state.sessionToken);
-  view.innerHTML=`
-    <div class="grid cols-2">
-      <div class="card">
-        <h3>Nueva edición o ajuste</h3>
-        <div class="form-grid">
-          <div><label class="label">ID edición</label><input class="input" id="eId" placeholder="2026"></div>
-          <div><label class="label">Nombre</label><input class="input" id="eName" placeholder="Edición 2026"></div>
-          <div><label class="label">Estado</label>
-            <select class="select" id="eStatus"><option>Abierta</option><option>Cerrada</option></select>
-          </div>
-          <div><label class="label">Inicio</label><input class="input" id="eStart" placeholder="2026-01-01"></div>
-          <div><label class="label">Fin</label><input class="input" id="eEnd" placeholder="2026-12-31"></div>
-          <div class="full"><label class="label">Notas</label><input class="input" id="eNotes"></div>
-          <div class="full">${state.user.role==='admin'?'<button class="btn" id="btnSaveEdition">Guardar edición</button>':''}</div>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Ediciones registradas</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Inicio</th><th>Fin</th></tr></thead>
-            <tbody>${rows.map(r=>`<tr>
-              <td><strong>${esc(r.edition_id)}</strong></td>
-              <td>${esc(r.edition_name)}</td>
-              <td>${statusBadge(r.status)}</td>
-              <td>${esc(r.start_date)}</td>
-              <td>${esc(r.end_date)}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
-  const btn=document.getElementById('btnSaveEdition');
-  if(btn) btn.onclick=async()=>{
-    await call('saveEdition',state.sessionToken,{
-      edition_id:document.getElementById('eId').value,
-      edition_name:document.getElementById('eName').value,
-      status:document.getElementById('eStatus').value,
-      start_date:document.getElementById('eStart').value,
-      end_date:document.getElementById('eEnd').value,
-      notes:document.getElementById('eNotes').value
-    });
-    state.statsCacheByEdition={};
-    await loadBootstrap();
-  };
+function renderEditions(view){
+  view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando...</div></div>';
+  return call('listEditions',state.sessionToken).then(function(rows){
+    view.innerHTML=
+      '<div class="grid cols-2">'+
+        '<div class="card">'+
+          '<h3>Nueva edición o ajuste</h3>'+
+          '<div class="form-grid">'+
+            '<div><label class="label">ID edición</label><input class="input" id="eId" placeholder="2026"></div>'+
+            '<div><label class="label">Nombre</label><input class="input" id="eName" placeholder="Edición 2026"></div>'+
+            '<div><label class="label">Estado</label><select class="select" id="eStatus"><option>Abierta</option><option>Cerrada</option></select></div>'+
+            '<div><label class="label">Inicio</label><input class="input" id="eStart" placeholder="2026-01-01"></div>'+
+            '<div><label class="label">Fin</label><input class="input" id="eEnd" placeholder="2026-12-31"></div>'+
+            '<div class="full"><label class="label">Notas</label><input class="input" id="eNotes"></div>'+
+            (state.user.role==='admin'?'<div class="full"><button class="btn" id="btnSaveEdition">Guardar edición</button></div>':'')+
+          '</div>'+
+        '</div>'+
+        '<div class="card">'+
+          '<h3>Ediciones registradas</h3>'+
+          '<div class="table-wrap">'+
+            '<table>'+
+              '<thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Inicio</th><th>Fin</th></tr></thead>'+
+              '<tbody>'+rows.map(function(r){
+                return '<tr>'+
+                  '<td><strong>'+esc(r.edition_id)+'</strong></td>'+
+                  '<td>'+esc(r.edition_name)+'</td>'+
+                  '<td>'+statusBadge(r.status)+'</td>'+
+                  '<td>'+esc(r.start_date)+'</td>'+
+                  '<td>'+esc(r.end_date)+'</td>'+
+                '</tr>';
+              }).join('')+'</tbody>'+
+            '</table>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    const btn=document.getElementById('btnSaveEdition');
+    if(btn) btn.onclick=function(){
+      const self=this; btnLoad(self,'Guardando...');
+      call('saveEdition',state.sessionToken,{
+        edition_id:document.getElementById('eId').value,
+        edition_name:document.getElementById('eName').value,
+        status:document.getElementById('eStatus').value,
+        start_date:document.getElementById('eStart').value,
+        end_date:document.getElementById('eEnd').value,
+        notes:document.getElementById('eNotes').value
+      }).then(function(){
+        state.statsCacheByEdition={};
+        toast('Edición guardada correctamente','success');
+        loadBootstrap();
+      }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
+    };
+  });
 }
 
 /* ── ENCUESTA (respondente) ────────────────────────── */
 function renderSurveyLoading(){
-  app.innerHTML=`<div class="survey-shell"><div class="card"><p class="muted">Cargando cuestionario...</p></div></div>`;
+  app.innerHTML='<div class="survey-shell"><div class="card"><div class="loading-row"><span class="spinner"></span> Cargando cuestionario...</div></div></div>';
 }
 
-async function loadSurveySchema(){
-  try{
-    state.schema=await call('getSurveySchema',state.token);
-    renderSurvey();
-  }catch(err){
-    app.innerHTML=`<div class="survey-shell"><div class="card"><h3>No fue posible abrir la encuesta</h3><p class="muted">${esc(err.message||err)}</p></div></div>`;
-  }
+function loadSurveySchema(){
+  call('getSurveySchema',state.token).then(function(schema){
+    state.schema=schema; renderSurvey();
+  }).catch(function(err){
+    app.innerHTML='<div class="survey-shell"><div class="card"><h3>No fue posible abrir la encuesta</h3><p class="muted">'+esc(err.message||err)+'</p></div></div>';
+  });
 }
 
 function renderSurvey(){
@@ -620,65 +1074,62 @@ function renderSurvey(){
     state.surveyStartedAt=new Date().toISOString();
     localStorage.setItem('encuesta_colab_started_at',state.surveyStartedAt);
   }
-  app.innerHTML=`
-    <div class="survey-shell">
-      <div class="hero">
-        <h2>${esc(state.schema.editionId)} · Encuesta de colaboradores</h2>
-        <p>Acceso personalizado por enlace. Responda una sola vez. Sus datos serán tratados con confidencialidad.</p>
-      </div>
-      <div class="card">
-        <div class="notice">Autoguardado activo. Si cierra accidentalmente, puede retomar desde el mismo enlace y dispositivo.</div>
-        <div id="surveyForm" style="margin-top:18px"></div>
-        <hr class="sep">
-        <div class="row">
-          <button class="btn" id="btnSubmit">Enviar encuesta</button>
-          <button class="btn ghost" id="btnReset">Limpiar borrador local</button>
-        </div>
-      </div>
-    </div>`;
+  app.innerHTML=
+    '<div class="survey-shell">'+
+      '<div class="hero">'+
+        '<h2>'+esc(state.schema.editionId)+' · Encuesta de colaboradores</h2>'+
+        '<p>Acceso personalizado por enlace. Responda una sola vez. Sus datos serán tratados con confidencialidad.</p>'+
+      '</div>'+
+      '<div class="card">'+
+        '<div class="notice">Autoguardado activo. Si cierra accidentalmente, puede retomar desde el mismo enlace y dispositivo.</div>'+
+        '<div id="surveyForm" style="margin-top:18px"></div>'+
+        '<hr class="sep">'+
+        '<div class="row">'+
+          '<button class="btn" id="btnSubmit">Enviar encuesta</button>'+
+          '<button class="btn ghost" id="btnReset">Limpiar borrador local</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
 
   const host=document.getElementById('surveyForm');
-  host.innerHTML=state.schema.sections.map(sec=>`
-    <div class="card" style="margin-bottom:16px;background:var(--panel-2)">
-      <h3>${esc(sec.label)}</h3>
-      <div class="form-grid">
-        ${sec.questions.map(q=>renderQuestion(q,draft)).join('')}
-      </div>
-    </div>`).join('');
+  host.innerHTML=state.schema.sections.map(function(sec){
+    return '<div class="card" style="margin-bottom:16px;background:var(--panel-2)">'+
+      '<h3>'+esc(sec.label)+'</h3>'+
+      '<div class="form-grid">'+sec.questions.map(function(q){return renderQuestion(q,draft);}).join('')+'</div>'+
+    '</div>';
+  }).join('');
 
   function updateVisibility(){
     const vals=collectVals();
-    [...host.querySelectorAll('[data-visible-if]')].forEach(el=>{
+    [].forEach.call(host.querySelectorAll('[data-visible-if]'),function(el){
       const rule=el.dataset.visibleIf||'';
       el.classList.toggle('hidden',!evalVis(rule,vals));
     });
   }
-  host.addEventListener('input',()=>{
+  host.addEventListener('input',function(){
     localStorage.setItem(draftKey,JSON.stringify(collectVals()));
     updateVisibility();
   });
   updateVisibility();
 
-  document.getElementById('btnReset').onclick=()=>{
+  document.getElementById('btnReset').onclick=function(){
     localStorage.removeItem(draftKey);
     localStorage.removeItem('encuesta_colab_started_at');
     loadSurveySchema();
   };
-  document.getElementById('btnSubmit').onclick=async()=>{
-    const btn=document.getElementById('btnSubmit');
-    btn.disabled=true; btn.textContent='Enviando...';
-    try{
-      const payload=collectVals();
-      payload.__client_started_at=state.surveyStartedAt;
-      await call('submitSurvey',state.token,payload);
+  document.getElementById('btnSubmit').onclick=function(){
+    const self=this; btnLoad(self,'Enviando...');
+    const payload=collectVals();
+    payload.__client_started_at=state.surveyStartedAt;
+    call('submitSurvey',state.token,payload).then(function(){
       localStorage.removeItem(draftKey);
       localStorage.removeItem('encuesta_colab_started_at');
-      app.innerHTML=`<div class="survey-shell"><div class="card" style="text-align:center;padding:40px">
-        <div style="font-size:48px;margin-bottom:16px">✅</div>
-        <h3 style="font-size:20px;margin-bottom:8px">Encuesta registrada correctamente</h3>
-        <p class="muted">Gracias por completar el formulario. Sus respuestas han sido guardadas.</p>
-      </div></div>`;
-    }catch(err){ alert(err.message||err); btn.disabled=false; btn.textContent='Enviar encuesta'; }
+      app.innerHTML='<div class="survey-shell"><div class="card" style="text-align:center;padding:48px 32px">'+
+        '<div style="font-size:56px;margin-bottom:16px">✅</div>'+
+        '<h3 style="font-size:22px;margin-bottom:10px">Encuesta registrada correctamente</h3>'+
+        '<p class="muted">Gracias por completar el formulario. Sus respuestas han sido guardadas de forma segura.</p>'+
+      '</div></div>';
+    }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
   };
 }
 
@@ -687,18 +1138,16 @@ function renderQuestion(q,draft){
   const req=q.required?' <span style="color:#e11d48">*</span>':'';
   let input='';
   if(q.type==='select'){
-    input=`<select class="select" data-field="${esc(q.field)}"><option value=""></option>${q.options.map(o=>`<option${String(val)===String(o)?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    input='<select class="select" data-field="'+esc(q.field)+'"><option value=""></option>'+q.options.map(function(o){return '<option'+(String(val)===String(o)?' selected':'')+'>'+esc(o)+'</option>';}).join('')+'</select>';
   }else if(q.type==='select_or_text'||q.type==='text_or_select'){
-    input=`<input list="dl_${esc(q.field)}" class="input" data-field="${esc(q.field)}" value="${esc(val)}">
-    <datalist id="dl_${esc(q.field)}">${q.options.map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist>`;
+    input='<input list="dl_'+esc(q.field)+'" class="input" data-field="'+esc(q.field)+'" value="'+esc(val)+'">'+
+      '<datalist id="dl_'+esc(q.field)+'">'+q.options.map(function(o){return '<option value="'+esc(o)+'"></option>';}).join('')+'</datalist>';
   }else if(q.type==='number'){
-    input=`<input class="input" type="number" data-field="${esc(q.field)}" value="${esc(val)}">`;
+    input='<input class="input" type="number" data-field="'+esc(q.field)+'" value="'+esc(val)+'">';
   }else{
-    input=`<input class="input" data-field="${esc(q.field)}" value="${esc(val)}">`;
+    input='<input class="input" data-field="'+esc(q.field)+'" value="'+esc(val)+'">';
   }
-  return `<div data-visible-if="${esc(q.visibleIf||'')}">
-    <label class="label">${esc(q.label)}${req}</label>${input}
-  </div>`;
+  return '<div data-visible-if="'+esc(q.visibleIf||'')+'"><label class="label">'+esc(q.label)+req+'</label>'+input+'</div>';
 }
 
 function evalVis(rule,vals){
@@ -708,7 +1157,7 @@ function evalVis(rule,vals){
 }
 function collectVals(){
   const out={};
-  [...document.querySelectorAll('[data-field]')].forEach(el=>{out[el.dataset.field]=el.value;});
+  [].forEach.call(document.querySelectorAll('[data-field]'),function(el){out[el.dataset.field]=el.value;});
   return out;
 }
 
