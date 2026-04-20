@@ -502,20 +502,20 @@ function renderDashboard(view){
     if(!rows.length) return '<p class="muted">Sin datos por edición.</p>';
     return ''+
       '<div class="table-wrap" style="max-height:340px">'+
-        '<table>'+
+        '<table class="table">'+
           '<thead><tr>'+
-            '<th>Edición</th><th>Total</th><th>Directos</th><th>Indirectos</th><th>IPS % (Aplicables)</th><th>Calidad OK</th><th>Edad prom.</th>'+
+            '<th>Edición</th><th class="right">Total</th><th class="right">Directos</th><th class="right">Indirectos</th><th class="right">IPS % (Aplicables)</th><th class="right">Calidad OK</th><th class="right">Edad prom.</th>'+
           '</tr></thead>'+
           '<tbody>'+
             rows.map(function(r){
               return '<tr>'+
                 '<td><strong>'+esc(r.edicion)+'</strong></td>'+
-                '<td>'+n(r.total).toLocaleString()+'</td>'+
-                '<td>'+n(r.directos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.directos),n(r.total))+'%)</span></td>'+
-                '<td>'+n(r.indirectos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.indirectos),n(r.total))+'%)</span></td>'+
-                '<td>'+n(r.conIpsPct)+'%</td>'+
-                '<td>'+n(r.calidadOkPct)+'%</td>'+
-                '<td>'+esc(r.edadProm)+'</td>'+
+                '<td class="right">'+n(r.total).toLocaleString()+'</td>'+
+                '<td class="right">'+n(r.directos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.directos),n(r.total))+'%)</span></td>'+
+                '<td class="right">'+n(r.indirectos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.indirectos),n(r.total))+'%)</span></td>'+
+                '<td class="right">'+n(r.conIpsPct)+'%</td>'+
+                '<td class="right">'+n(r.calidadOkPct)+'%</td>'+
+                '<td class="right">'+esc(r.edadProm)+'</td>'+
               '</tr>';
             }).join('')+
           '</tbody>'+
@@ -528,17 +528,17 @@ function renderDashboard(view){
     if(!rows.length) return '<p class="muted">Sin datos de IPS por tipo.</p>';
     return ''+
       '<div class="table-wrap" style="max-height:340px">'+
-        '<table>'+
-          '<thead><tr><th>Tipo</th><th>Con IPS</th><th>Aplicables</th><th>Cobertura %</th></tr></thead>'+
+        '<table class="table">'+
+          '<thead><tr><th>Tipo</th><th class="right">Con IPS</th><th class="right">Aplicables</th><th class="right">Cobertura %</th></tr></thead>'+
           '<tbody>'+
             rows.map(function(r){
               const app=n(r.aplicables);
               const pct=app?Math.round(n(r.conIps)*100/app):0;
               return '<tr>'+
                 '<td><strong>'+esc(r.tipo)+'</strong></td>'+
-                '<td>'+n(r.conIps).toLocaleString()+'</td>'+
-                '<td>'+app.toLocaleString()+'</td>'+
-                '<td>'+pct+'%</td>'+
+                '<td class="right">'+n(r.conIps).toLocaleString()+'</td>'+
+                '<td class="right">'+app.toLocaleString()+'</td>'+
+                '<td class="right"><strong>'+pct+'%</strong></td>'+
               '</tr>';
             }).join('')+
           '</tbody>'+
@@ -552,15 +552,15 @@ function renderDashboard(view){
     const sum=items.reduce(function(acc,x){return acc+n(x.value);},0);
     return ''+
       '<div class="table-wrap" style="max-height:340px">'+
-        '<table>'+
-          '<thead><tr><th>Etiqueta</th><th>Conteo</th><th>%</th></tr></thead>'+
+        '<table class="table">'+
+          '<thead><tr><th>Etiqueta</th><th class="right">Conteo</th><th class="right">%</th></tr></thead>'+
           '<tbody>'+
             items.map(function(x){
               const pct=sum?Math.round(n(x.value)*100/sum):0;
               return '<tr>'+
                 '<td>'+esc(x.label)+'</td>'+
-                '<td>'+n(x.value).toLocaleString()+'</td>'+
-                '<td>'+pct+'%</td>'+
+                '<td class="right">'+n(x.value).toLocaleString()+'</td>'+
+                '<td class="right">'+pct+'%</td>'+
               '</tr>';
             }).join('')+
           '</tbody>'+

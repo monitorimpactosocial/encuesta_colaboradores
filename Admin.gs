@@ -508,12 +508,23 @@ function patchIPSExceptions() {
     var rCargo = norm(data[i][cargoIdx]);
     
     var overrideValue = null;
-    for (var j = 0; j < OVERRIDES.length; j++) {
-      var oEmp = norm(OVERRIDES[j].emp);
-      var oCargo = norm(OVERRIDES[j].cargo);
-      if (rEmp.indexOf(oEmp) > -1 && rCargo.indexOf(oCargo) > -1) {
-        overrideValue = OVERRIDES[j].val;
-        break;
+    
+    // Auto-justify Directos who don't have IPS
+    if (rEmp.indexOf('paracel') > -1 || data[i][tipoIdx] === 'Directo') {
+      var currentIps = norm(data[i][ipsIdx]);
+      if (currentIps !== 'si') {
+        overrideValue = 'No aplica (Justificado)';
+      }
+    }
+    
+    if (!overrideValue) {
+      for (var j = 0; j < OVERRIDES.length; j++) {
+        var oEmp = norm(OVERRIDES[j].emp);
+        var oCargo = norm(OVERRIDES[j].cargo);
+        if (rEmp.indexOf(oEmp) > -1 && rCargo.indexOf(oCargo) > -1) {
+          overrideValue = OVERRIDES[j].val;
+          break;
+        }
       }
     }
     
