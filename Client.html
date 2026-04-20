@@ -637,22 +637,28 @@ function renderDashboard(view){
     const deltaBadge='badge '+(delta>=10?'ok':delta>=0?'warn':'danger');
 
     view.innerHTML=
-      '<div class="card" style="margin-bottom:16px">'+
-        '<div class="spread">'+
-          '<div>'+
-            '<h3 style="margin-bottom:6px">Tablero ejecutivo</h3>'+
-            '<p class="muted" style="font-size:12px">Rango global: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros seleccionados.</p>'+
-          '</div>'+
-          '<div class="row" id="dashEditionFilters">'+
+      '<div style="display:flex; flex-direction:row; gap:20px; align-items:flex-start;">'+
+        '<aside class="card" style="width:240px; flex-shrink:0; position:sticky; top:20px;">'+
+          '<h3 style="margin-bottom:12px; font-size:16px;">Filtros de Edición</h3>'+
+          '<p class="muted small" style="margin-bottom:16px;">Selecciona uno o varios años para comparar.</p>'+
+          '<div style="display:flex; flex-direction:column; gap:8px;" id="dashEditionFilters">'+
             editionOptions.map(function(opt){
               if(opt.value==='ALL') return '';
-              const isSelected = edFilters.indexOf(opt.value) > -1 || edFilters.length === 0;
-              return '<button class="btn btn-small filter-btn '+(isSelected?'btn-primary':'btn-ghost')+'" data-ed="'+esc(opt.value)+'">'+esc(opt.label)+'</button>';
+              const isSelected = edFilters.length === 0 || edFilters.indexOf(opt.value) > -1;
+              return '<button class="btn '+(isSelected?'btn-primary':'btn-ghost')+' filter-btn" data-ed="'+esc(opt.value)+'" style="justify-content:flex-start; text-align:left;">'+(isSelected?'✓ ':'') + esc(opt.label)+'</button>';
             }).join('')+
-            '<button class="btn btn-secondary btn-small" id="dashRefresh" title="Actualizar datos">↻</button>'+
+            '<button class="btn btn-secondary" id="dashRefresh" title="Actualizar datos" style="margin-top:16px;">↻ Sincronizar datos</button>'+
           '</div>'+
-        '</div>'+
-        '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">'+
+        '</aside>'+
+        '<div style="flex:1; min-width:0;">'+
+          '<div class="card" style="margin-bottom:16px">'+
+            '<div class="spread">'+
+              '<div>'+
+                '<h3 style="margin-bottom:6px">Tablero ejecutivo</h3>'+
+                '<p class="muted" style="font-size:12px">Rango global: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros seleccionados.</p>'+
+              '</div>'+
+            '</div>'+
+            '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">'+
           '<span class="badge info">Directos: '+pctDir+'%</span>'+
           '<span class="badge info">Indirectos: '+pctInd+'%</span>'+
           (topDept?'<span class="badge muted">Top dpto.: '+esc(topDept.label)+' ('+n(topDept.value)+')</span>':'')+
@@ -693,9 +699,9 @@ function renderDashboard(view){
       '<div class="card" style="margin-top:18px">'+
         '<div class="spread" style="margin-bottom:12px">'+
           '<h3 style="margin-bottom:0">Comparativo por edición</h3>'+
-          '<span class="badge info">'+(Array.isArray(s.editionStats)?s.editionStats.length:0)+' ediciones</span>'+
+          '<span class="badge info">'+(Array.isArray(filteredStats)?filteredStats.length:0)+' ediciones</span>'+
         '</div>'+
-        renderEditionTable(s.editionStats)+
+        renderEditionTable(filteredStats)+
       '</div>'+
 
       '<div class="grid-2" style="margin-top:18px">'+
@@ -713,7 +719,8 @@ function renderDashboard(view){
           '</div>'+
           renderTopItemsTable(s.topEmpresasIndirecto)+
         '</div>'+
-      '</div>';
+      '</div>'+
+      '</div></div>';
 
     [].forEach.call(document.querySelectorAll('.filter-btn'), function(btn) {
       btn.onclick = function() {
@@ -735,7 +742,9 @@ function renderDashboard(view){
       const serie=Array.isArray(s.serieMes)?s.serieMes:[];
       lineChart('cSerieMes', serie.map(function(x){return x.label;}), serie.map(function(x){return n(x.value);}), '#0f766e');
 
-      const te=Array.isArray(s.tipoPorEdicion)?s.tipoPorEdicion:[];
+      const te=(Array.isArray(s.tipoPorEdicion)?s.tipoPorEdicion:[]).filter(function(x){
+        return edFilters.length === 0 || edFilters.indexOf(x.edicion) > -1;
+      });
       stackedBar('cTipoEd',
         te.map(function(x){return x.edicion;}),
         [
@@ -770,7 +779,9 @@ function renderDashboard(view){
         hbar('cSal', salItems, AMBER_GRAD);
       }
 
-      const ce=Array.isArray(s.calidadPorEdicion)?s.calidadPorEdicion:[];
+      const ce=(Array.isArray(s.calidadPorEdicion)?s.calidadPorEdicion:[]).filter(function(x){
+        return edFilters.length === 0 || edFilters.indexOf(x.edicion) > -1;
+      });
       stackedBar('cCalEd',
         ce.map(function(x){return x.edicion;}),
         [
