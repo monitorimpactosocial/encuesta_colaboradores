@@ -226,6 +226,38 @@ function stackedBar(id, labels, datasets, opts){
   });
 }
 
+function multiBar(id, labels, datasets, opts){
+  destroyChart(id);
+  const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return;
+  CHARTS[id]=new Chart(el,{
+    type:'bar',
+    data:{labels:labels||[],datasets:datasets||[]},
+    options:{
+      indexAxis: opts&&opts.horizontal ? 'y' : 'x',
+      plugins:{
+        legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
+        tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}}
+      },
+      scales:{
+        x:{grid:{display:!(opts&&opts.horizontal)},ticks:{font:{size:11},color:'#0f2027'},beginAtZero:true},
+        y:{grid:{display:opts&&opts.horizontal},ticks:{font:{size:10},color:'#5a7580'},beginAtZero:true}
+      }
+    }
+  });
+}
+
+function buildMultiDs(multiMap, origLabels, colors){
+  if(!multiMap) return [];
+  return Object.keys(multiMap).sort().map(function(ed, i) {
+    return {
+      label: ed,
+      data: origLabels.map(function(lbl){ return multiMap[ed][lbl]||0; }),
+      backgroundColor: colors[i % colors.length],
+      borderRadius: 4
+    };
+  });
+}
+
 const TEAL_GRAD = function(i,nn){return 'hsl('+(173-i*(30/Math.max(nn-1,1)))+','+(79-i*8)+'%,'+(38+i*5)+'%)';};
 const AMBER_GRAD = function(i,nn){return 'hsl('+(35+i*(10/Math.max(nn-1,1)))+',80%,'+(35+i*6)+'%)';};
 const INDIGO_GRAD = function(i,nn){return 'hsl('+(238+i*(15/Math.max(nn-1,1)))+','+(72-i*5)+'%,'+(40+i*5)+'%)';};
@@ -437,12 +469,15 @@ function renderCurrentTab(){
 
 /* ── DASHBOARD v3 ──────────────────────────────────── */
 function renderDashboard(view){
-  const editionKey = state.dashboardEdition || 'ALL';
+  state.dashboardEditions = state.dashboardEditions || [];
+  const edFilters = state.dashboardEditions;
+  const editionKey = edFilters.length ? edFilters.slice().sort().join('|') : 'ALL';
+  
   view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando tablero...</div></div>';
 
   const loadData = state.statsCacheByEdition[editionKey]
     ? Promise.resolve(state.statsCacheByEdition[editionKey])
-    : call('getDashboardSummary', state.sessionToken, editionKey==='ALL'?'':editionKey).then(function(d){
+    : call('getDashboardSummary', state.sessionToken, edFilters).then(function(d){
         state.statsCacheByEdition[editionKey]=d; return d;
       });
 
@@ -563,12 +598,13 @@ function renderDashboard(view){
             '<h3 style="margin-bottom:6px">Tablero ejecutivo</h3>'+
             '<p class="muted" style="font-size:12px">Rango de fechas: '+esc(rangoTxt)+' · '+total.toLocaleString()+' registros analíticos.</p>'+
           '</div>'+
-          '<div class="row">'+
-            '<label class="label" style="margin:0">Edición</label>'+
-            '<select class="select" id="dashEdition" style="min-width:210px">'+
-              editionOptions.map(function(opt){return '<option value="'+esc(opt.value)+'"'+(state.dashboardEdition===opt.value?' selected':'')+'>'+esc(opt.label)+(opt.count!=null?' ('+opt.count+')':'')+'</option>';}).join('')+
-            '</select>'+
-            '<button class="btn secondary" id="dashRefresh">↻ Actualizar</button>'+
+          '<div class="row" id="dashEditionFilters">'+
+            editionOptions.map(function(opt){
+              if(opt.value==='ALL') return '';
+              const isSelected = edFilters.indexOf(opt.value) > -1 || edFilters.length === 0;
+              return '<button class="btn btn-small filter-btn '+(isSelected?'btn-primary':'btn-ghost')+'" data-ed="'+esc(opt.value)+'">'+esc(opt.label)+'</button>';
+            }).join('')+
+            '<button class="btn btn-secondary btn-small" id="dashRefresh" title="Actualizar datos">↻</button>'+
           '</div>'+
         '</div>'+
         '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">'+
@@ -581,7 +617,7 @@ function renderDashboard(view){
       '</div>'+
 
       '<div class="kpi-row">'+
-        kpiTile('Registros', total.toLocaleString(), (state.dashboardEdition==='ALL'?'Todas las ediciones':'Edición '+state.dashboardEdition), 'emph')+
+        kpiTile('Registros', total.toLocaleString(), (edFilters.length?edFilters.join(', '):'Todas las ediciones'), 'emph')+
         kpiTile('Calidad OK', calidadOkPct+'%', ok.toLocaleString()+' OK · '+rev.toLocaleString()+' revisar · '+crit.toLocaleString()+' crítico')+
         kpiTile('Cobertura IPS', ipsPct+'%', conIps.toLocaleString()+' con IPS')+
         kpiTile('Edad promedio', edadProm, 'Rango válido 15–80')+
@@ -634,11 +670,19 @@ function renderDashboard(view){
         '</div>'+
       '</div>';
 
-    document.getElementById('dashEdition').onchange=function(e){
-      state.dashboardEdition=e.target.value||'ALL'; renderDashboard(view);
-    };
+    [].forEach.call(document.querySelectorAll('.filter-btn'), function(btn) {
+      btn.onclick = function() {
+        var val = this.dataset.ed;
+        if (edFilters.indexOf(val) > -1) {
+          state.dashboardEditions = edFilters.filter(function(v){return v!==val;});
+        } else {
+          state.dashboardEditions.push(val);
+        }
+        renderDashboard(view);
+      };
+    });
     document.getElementById('dashRefresh').onclick=function(){
-      delete state.statsCacheByEdition[state.dashboardEdition||'ALL'];
+      delete state.statsCacheByEdition[editionKey];
       renderDashboard(view);
     };
 
@@ -655,10 +699,22 @@ function renderDashboard(view){
         ]
       );
 
-      hbar('cDept', safeItems(s.porDeptResidencia), TEAL_GRAD);
-      hbar('cEmp', safeItems(s.topEmpresasIndirecto,'Sin dato'), INDIGO_GRAD, {max:undefined});
-      const salItems=safeItems(s.porSalario).map(function(x){return {label:shortSalario(x.label),value:x.value};});
-      hbar('cSal', salItems, AMBER_GRAD);
+      const mColors = ['#0f766e', '#6366f1', '#d97706', '#e11d48', '#059669'];
+      const deptOrig = safeItems(s.porDeptResidencia).map(function(x){return x.label;});
+      const empOrig = safeItems(s.topEmpresasIndirecto,'Sin dato').map(function(x){return x.label;});
+      const salOrig = safeItems(s.porSalario).map(function(x){return x.label;});
+      const salLabels = salOrig.map(shortSalario);
+
+      if (edFilters.length > 0 && s.multi) {
+        multiBar('cDept', deptOrig, buildMultiDs(s.multi.dept, deptOrig, mColors), {horizontal:true});
+        multiBar('cEmp', empOrig, buildMultiDs(s.multi.empresa, empOrig, mColors), {horizontal:true});
+        multiBar('cSal', salLabels, buildMultiDs(s.multi.salario, salOrig, mColors), {horizontal:true});
+      } else {
+        hbar('cDept', safeItems(s.porDeptResidencia), TEAL_GRAD);
+        hbar('cEmp', safeItems(s.topEmpresasIndirecto,'Sin dato'), INDIGO_GRAD, {max:undefined});
+        const salItems=safeItems(s.porSalario).map(function(x){return {label:shortSalario(x.label),value:x.value};});
+        hbar('cSal', salItems, AMBER_GRAD);
+      }
 
       const ce=Array.isArray(s.calidadPorEdicion)?s.calidadPorEdicion:[];
       stackedBar('cCalEd',

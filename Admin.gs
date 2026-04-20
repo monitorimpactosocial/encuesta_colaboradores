@@ -11,10 +11,30 @@ function getBootstrap(sessionToken) {
   };
 }
 
-function getDashboardSummary(sessionToken, editionId) {
+// Campos mínimos para dashboard y tablas (evita leer/serializar columnas pesadas).
+var ANALYTIC_MIN_FIELDS_ = [
+  'submission_ts',
+  'edicion',
+  'fecha_encuesta',
+  'tipo_colaborador',
+  'area_colaborador_indirecto',
+  'sexo',
+  'edad',
+  'edad_grupo',
+  'departamento_residencia',
+  'descuento_ips_actual',
+  'salario_actual_banda',
+  'empresa_contratista',
+  'estado_calidad',
+  'n_flags',
+  'respondente_id',
+  'source_uuid'
+];
+
+function getDashboardSummary(sessionToken, editionsArray) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var editionFilter = normalizeText_(editionId) || '';
-  var cacheKey = 'dash_summary_' + getDashboardCacheVersion_() + '_' + (editionFilter || 'ALL');
+  var edFilters = Array.isArray(editionsArray) ? editionsArray.map(normalizeText_).filter(Boolean) : [];
+  var cacheKey = 'dash_summary_multi_' + getDashboardCacheVersion_() + '_' + (edFilters.length ? edFilters.sort().join('|') : 'ALL');
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -22,32 +42,301 @@ function getDashboardSummary(sessionToken, editionId) {
   }
 
   var allRows = getCombinedAnalyticRows_();
-  var rows = editionFilter
-    ? allRows.filter(function(r){ return normalizeText_(r.edicion) === editionFilter; })
-    : allRows;
-  var indirectos = rows.filter(function(r){ return r.tipo_colaborador === 'Indirecto'; });
-  var directos   = rows.filter(function(r){ return r.tipo_colaborador === 'Directo'; });
-  var conIps     = rows.filter(function(r){ return isYesLike_(r.descuento_ips_actual); }).length;
-  var edades     = rows.map(function(r){ return Number(r.edad); }).filter(function(n){ return !isNaN(n) && n >= 15 && n <= 80; });
-  var edadProm   = edades.length ? Math.round(edades.reduce(function(a,b){return a+b;},0) / edades.length * 10) / 10 : 0;
+  var total = 0;
+  var directos = 0;
+  var indirectos = 0;
+  var conIps = 0;
+  var calidadOk = 0;
+  var calidadRevisar = 0;
+  var calidadCritico = 0;
+  var edadesSum = 0;
+  var edadesCount = 0;
+  var flagsSum = 0;
+
+  var last7 = 0;
+  var last30 = 0;
+  var prev30 = 0;
+  var minFecha = '';
+  var maxFecha = '';
+  var byMes = {};
+  var byEmpresaIndirecto = {};
+  var ipsByTipo = {};
+
+  var perEditionAll = {};
+
+  var byEdicionesAll = {};
+  var byEdicion = {};
+  var byTipo = {};
+  var bySexo = {};
+  var byAreaIndirecto = {};
+  var byDeptResidencia = {};
+  var byIpsActual = {};
+  var bySalario = {};
+  var byGrupoEdad = {};
+  var byEstadoCalidad = {};
+
+  var mTipo = {};
+  var mDept = {};
+  var mEmpresa = {};
+  var mSalario = {};
+  var mCalidad = {};
+
+  function inc_(map, key) {
+    map[key] = (map[key] || 0) + 1;
+  }
+  function incM_(map, ed, key) {
+    if (!map[ed]) map[ed] = {};
+    map[ed][key] = (map[ed][key] || 0) + 1;
+  }
+
+  function keyOf_(value) {
+    return normalizeText_(value) || 'Sin dato';
+  }
+
+  function classifyCalidad_(value) {
+    var t = keyOf_(value).toLowerCase();
+    if (t === 'ok') return 'ok';
+    if (t.indexOf('crit') > -1) return 'critico';
+    if (t.indexOf('revis') > -1) return 'revisar';
+    return t || 'sin dato';
+  }
+
+  function ymd_(value) {
+    if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var t = normalizeText_(value);
+    if (!t) return '';
+    var m = t.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) return m[1];
+    // Intento de parseo como fecha
+    var d = new Date(t);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    return '';
+  }
+
+  function parseYmdDate_(ymd) {
+    var m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+
+  function monthKey_(ymd) {
+    return ymd && ymd.length >= 7 ? ymd.slice(0, 7) : '';
+  }
+
+  function getEditionStats_(ed) {
+    if (!perEditionAll[ed]) {
+      perEditionAll[ed] = {
+        edicion: ed,
+        total: 0,
+        directos: 0,
+        indirectos: 0,
+        conIps: 0,
+        ok: 0,
+        revisar: 0,
+        critico: 0,
+        edadesSum: 0,
+        edadesCount: 0,
+        flagsSum: 0
+      };
+    }
+    return perEditionAll[ed];
+  }
+
+  var now = new Date();
+  var MS_DAY = 24 * 3600 * 1000;
+  var start7 = new Date(now.getTime() - 7 * MS_DAY);
+  var start30 = new Date(now.getTime() - 30 * MS_DAY);
+  var start60 = new Date(now.getTime() - 60 * MS_DAY);
+
+  allRows.forEach(function(r) {
+    var ed = keyOf_(r.edicion);
+    inc_(byEdicionesAll, ed);
+    var edStats = getEditionStats_(ed);
+    edStats.total++;
+
+    var tipoAll = keyOf_(r.tipo_colaborador);
+    if (tipoAll === 'Directo') edStats.directos++;
+    if (tipoAll === 'Indirecto') edStats.indirectos++;
+
+    var ipsAll = keyOf_(r.descuento_ips_actual);
+    if (isYesLike_(ipsAll)) edStats.conIps++;
+
+    var calAll = classifyCalidad_(r.estado_calidad);
+    if (calAll === 'ok') edStats.ok++;
+    else if (calAll === 'critico') edStats.critico++;
+    else if (calAll === 'revisar') edStats.revisar++;
+
+    var edadAll = Number(r.edad);
+    if (!isNaN(edadAll) && edadAll >= 15 && edadAll <= 80) {
+      edStats.edadesSum += edadAll;
+      edStats.edadesCount++;
+    }
+    var nfAll = Number(r.n_flags);
+    if (!isNaN(nfAll)) edStats.flagsSum += nfAll;
+
+    if (edFilters.length > 0 && edFilters.indexOf(ed) === -1) return;
+
+    total++;
+    inc_(byEdicion, ed);
+
+    var tipo = keyOf_(r.tipo_colaborador);
+    inc_(byTipo, tipo);
+    incM_(mTipo, ed, tipo);
+    if (tipo === 'Directo') directos++;
+    if (tipo === 'Indirecto') {
+      indirectos++;
+      inc_(byAreaIndirecto, keyOf_(r.area_colaborador_indirecto));
+      var emp = keyOf_(r.empresa_contratista);
+      inc_(byEmpresaIndirecto, emp);
+      incM_(mEmpresa, ed, emp);
+    }
+
+    inc_(bySexo, keyOf_(r.sexo));
+    var dept = keyOf_(r.departamento_residencia);
+    inc_(byDeptResidencia, dept);
+    incM_(mDept, ed, dept);
+
+    var ips = keyOf_(r.descuento_ips_actual);
+    inc_(byIpsActual, ips);
+    if (isYesLike_(ips)) conIps++;
+
+    var sal = keyOf_(r.salario_actual_banda);
+    inc_(bySalario, sal);
+    incM_(mSalario, ed, sal);
+
+    inc_(byGrupoEdad, keyOf_(r.edad_grupo));
+    var cal = classifyCalidad_(r.estado_calidad);
+    inc_(byEstadoCalidad, keyOf_(r.estado_calidad));
+    incM_(mCalidad, ed, cal);
+    if (cal === 'ok') calidadOk++;
+    else if (cal === 'critico') calidadCritico++;
+    else if (cal === 'revisar') calidadRevisar++;
+
+    var nf = Number(r.n_flags);
+    if (!isNaN(nf)) flagsSum += nf;
+
+    // IPS por tipo (tabla/figura adicional)
+    if (!ipsByTipo[tipo]) ipsByTipo[tipo] = { tipo: tipo, conIps: 0, sinIps: 0, total: 0 };
+    ipsByTipo[tipo].total++;
+    if (isYesLike_(ips)) ipsByTipo[tipo].conIps++;
+    else ipsByTipo[tipo].sinIps++;
+
+    var edad = Number(r.edad);
+    if (!isNaN(edad) && edad >= 15 && edad <= 80) {
+      edadesSum += edad;
+      edadesCount++;
+    }
+
+    // Serie temporal y ventanas recientes (usa fecha_encuesta preferentemente)
+    var fecha = ymd_(r.fecha_encuesta) || ymd_(r.submission_ts);
+    if (fecha) {
+      if (!minFecha || fecha < minFecha) minFecha = fecha;
+      if (!maxFecha || fecha > maxFecha) maxFecha = fecha;
+      var mk = monthKey_(fecha);
+      if (mk) inc_(byMes, mk);
+
+      var d = parseYmdDate_(fecha);
+      if (d) {
+        if (d >= start7) last7++;
+        if (d >= start30) last30++;
+        else if (d >= start60) prev30++;
+      }
+    }
+  });
+
+  var edadProm = edadesCount ? Math.round((edadesSum / edadesCount) * 10) / 10 : 0;
+  var flagsProm = total ? Math.round((flagsSum / total) * 10) / 10 : 0;
+  var calidadOkPct = total ? Math.round(calidadOk * 100 / total) : 0;
+  var delta30 = prev30 ? Math.round((last30 - prev30) * 100 / prev30) : (last30 ? 100 : 0);
+
+  function mapToItems_(map) {
+    return Object.keys(map).sort().map(function(k) { return { label: k, value: map[k] }; });
+  }
+
+  function topItems_(map, n, excludeLabels) {
+    excludeLabels = excludeLabels || [];
+    var items = mapToItems_(map)
+      .filter(function(x){ return excludeLabels.indexOf(x.label) === -1; })
+      .sort(function(a, b) { return b.value - a.value; });
+    return items.slice(0, n || 10);
+  }
+
+  var serieMes = mapToItems_(byMes).sort(function(a, b) { return a.label.localeCompare(b.label); });
+  if (serieMes.length > 18) serieMes = serieMes.slice(serieMes.length - 18);
+
+  var editionStats = Object.keys(perEditionAll).map(function(k) {
+    var st = perEditionAll[k];
+    var edadP = st.edadesCount ? Math.round((st.edadesSum / st.edadesCount) * 10) / 10 : 0;
+    var ipsPct = st.total ? Math.round(st.conIps * 100 / st.total) : 0;
+    var okPct = st.total ? Math.round(st.ok * 100 / st.total) : 0;
+    var flagsP = st.total ? Math.round((st.flagsSum / st.total) * 10) / 10 : 0;
+    return {
+      edicion: st.edicion,
+      total: st.total,
+      directos: st.directos,
+      indirectos: st.indirectos,
+      conIpsPct: ipsPct,
+      calidadOkPct: okPct,
+      edadProm: edadP,
+      nFlagsProm: flagsP,
+      ok: st.ok,
+      revisar: st.revisar,
+      critico: st.critico
+    };
+  }).sort(function(a, b) { return a.edicion.localeCompare(b.edicion); });
+
+  var tipoPorEdicion = editionStats.map(function(s) {
+    return { edicion: s.edicion, directos: s.directos, indirectos: s.indirectos, total: s.total };
+  });
+
+  var calidadPorEdicion = editionStats.map(function(s) {
+    return { edicion: s.edicion, ok: s.ok, revisar: s.revisar, critico: s.critico, total: s.total };
+  });
+
+  var ipsPorTipo = Object.keys(ipsByTipo).map(function(k) { return ipsByTipo[k]; })
+    .sort(function(a, b) { return a.tipo.localeCompare(b.tipo); });
 
   var summary = {
     edicionFiltro: editionFilter || '',
-    edicionesDisponibles: countBy_(allRows, 'edicion').sort(function(a,b){ return a.label.localeCompare(b.label); }),
-    total:      rows.length,
-    directos:   directos.length,
-    indirectos: indirectos.length,
-    conIpsPct:  rows.length ? Math.round(conIps * 100 / rows.length) : 0,
+    edicionesDisponibles: mapToItems_(byEdicionesAll).sort(function(a,b){ return a.label.localeCompare(b.label); }),
+    total:      total,
+    directos:   directos,
+    indirectos: indirectos,
+    conIps:     conIps,
+    conIpsPct:  total ? Math.round(conIps * 100 / total) : 0,
     edadProm:   edadProm,
-    porEdicion:    countBy_(rows, 'edicion').sort(function(a,b){ return a.label.localeCompare(b.label); }),
-    porTipo:       countBy_(rows, 'tipo_colaborador'),
-    porSexo:       countBy_(rows, 'sexo'),
-    porAreaIndirecto:   countBy_(indirectos, 'area_colaborador_indirecto'),
-    porDeptResidencia:  countBy_(rows, 'departamento_residencia').sort(function(a,b){ return b.value-a.value; }).slice(0,15),
-    porIpsActual:       countBy_(rows, 'descuento_ips_actual'),
-    porSalario:         sortSalario_(countBy_(rows, 'salario_actual_banda')),
-    porGrupoEdad:       sortGrupoEdad_(countBy_(rows, 'edad_grupo')),
-    porEstadoCalidad:   countBy_(rows, 'estado_calidad')
+    calidadOkPct: calidadOkPct,
+    calidadOk: calidadOk,
+    calidadRevisar: calidadRevisar,
+    calidadCritico: calidadCritico,
+    nFlagsProm: flagsProm,
+    last7: last7,
+    last30: last30,
+    prev30: prev30,
+    delta30Pct: delta30,
+    rangoFechas: { min: minFecha, max: maxFecha },
+    serieMes: serieMes,
+    editionStats: editionStats,
+    tipoPorEdicion: tipoPorEdicion,
+    calidadPorEdicion: calidadPorEdicion,
+    ipsPorTipo: ipsPorTipo,
+    topEmpresasIndirecto: topItems_(byEmpresaIndirecto, 12, ['Sin dato']),
+    porEdicion:    mapToItems_(byEdicion).sort(function(a,b){ return a.label.localeCompare(b.label); }),
+    porTipo:       mapToItems_(byTipo),
+    porSexo:       mapToItems_(bySexo),
+    porAreaIndirecto:   mapToItems_(byAreaIndirecto),
+    porDeptResidencia:  mapToItems_(byDeptResidencia).sort(function(a,b){ return b.value-a.value; }).slice(0,15),
+    porIpsActual:       mapToItems_(byIpsActual),
+    porSalario:         sortSalario_(mapToItems_(bySalario)),
+    porGrupoEdad:       sortGrupoEdad_(mapToItems_(byGrupoEdad)),
+    porEstadoCalidad:   mapToItems_(byEstadoCalidad),
+    multi: {
+      tipo: mTipo,
+      dept: mDept,
+      empresa: mEmpresa,
+      salario: mSalario,
+      calidad: mCalidad
+    }
   };
 
   cache.put(cacheKey, jsonStringify_(summary), 180);
@@ -119,17 +408,13 @@ function listResponses(sessionToken, limit) {
  * La deduplicacion se hace por source_uuid y fallback por (edicion|respondente_id|fecha_encuesta).
  */
 function getCombinedAnalyticRows_() {
-  var cache = CacheService.getScriptCache();
-  var cacheKey = 'combined_analytic_' + getDashboardCacheVersion_();
-  var cached = cache.get(cacheKey);
-  if (cached) {
-    return jsonParse_(cached, []) || [];
-  }
-
-  var snapRows = getEmbeddedSnapshotRows_();
+  // Importante: CacheService tiene límite ~100KB por key; serializar arrays grandes
+  // termina siendo más costoso y muchas veces no se guarda. Se prioriza velocidad.
+  var fields = ANALYTIC_MIN_FIELDS_;
+  var snapRows = getEmbeddedSnapshotRows_(fields);
   var liveRows = snapRows.length
-    ? getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, getLiveTailLimit_())
-    : getRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC);
+    ? getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, getLiveTailLimit_(), fields)
+    : getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, fields);
   var out = [];
   var seen = {};
 
@@ -146,9 +431,9 @@ function getCombinedAnalyticRows_() {
     out.push(r);
   }
 
-  snapRows.forEach(addRow);
+  // Prefiere filas live si hay overlap con snapshot (más campos / más actual).
   liveRows.forEach(addRow);
-  cache.put(cacheKey, jsonStringify_(out), 120);
+  snapRows.forEach(addRow);
   return out;
 }
 
@@ -158,32 +443,68 @@ function getLiveTailLimit_() {
   return (!isNaN(n) && n > 0) ? n : 2500;
 }
 
-function getRecentRowsAsObjects_(sheetName, limit) {
+function getRecentRowsAsObjects_(sheetName, limit, fields) {
   var sh = getSheet_(sheetName);
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
 
-  var headers = getHeader_(sh);
   var dataRows = lastRow - 1;
   var take = Math.min(Math.max(Number(limit || dataRows), 1), dataRows);
   var startRow = lastRow - take + 1;
-  var values = sh.getRange(startRow, 1, take, headers.length).getValues();
 
-  return values.filter(function(row) {
-    return row.join('') !== '';
-  }).map(function(row, idx) {
-    var obj = {};
-    headers.forEach(function(h, i) { obj[h] = row[i]; });
-    obj.__rowNum = startRow + idx;
-    return obj;
+  var headers = getHeader_(sh);
+  var colByHeader = {};
+  headers.forEach(function(h, i) { colByHeader[h] = i + 1; });
+  var pick = (fields && fields.length) ? fields : headers;
+
+  // Si se solicita un subconjunto de campos, leer solo las columnas necesarias
+  // (y en segmentos contiguos) para evitar traer toda la hoja.
+  var spec = pick.map(function(h) { return { h: h, col: colByHeader[h] || 0 }; });
+  var cols = spec.map(function(s) { return s.col; }).filter(function(c) { return c > 0; });
+  if (!cols.length) return [];
+
+  cols.sort(function(a, b) { return a - b; });
+  var segments = [];
+  cols.forEach(function(c) {
+    var last = segments.length ? segments[segments.length - 1] : null;
+    if (!last || c > last.end + 1) segments.push({ start: c, end: c });
+    else last.end = c;
   });
+
+  var segValues = segments.map(function(s) {
+    return sh.getRange(startRow, s.start, take, s.end - s.start + 1).getValues();
+  });
+
+  var colMap = {};
+  segments.forEach(function(s, segIdx) {
+    for (var c = s.start; c <= s.end; c++) {
+      colMap[c] = { segIdx: segIdx, offset: c - s.start };
+    }
+  });
+
+  var out = [];
+  for (var r = 0; r < take; r++) {
+    var obj = {};
+    var any = false;
+    spec.forEach(function(s) {
+      if (!s.col) { obj[s.h] = ''; return; }
+      var m = colMap[s.col];
+      var v = segValues[m.segIdx][r][m.offset];
+      obj[s.h] = v;
+      if (v !== '' && v !== null && v !== undefined) any = true;
+    });
+    if (!any) continue;
+    obj.__rowNum = startRow + r;
+    out.push(obj);
+  }
+  return out;
 }
 
 /**
  * Lee CSV embebido en SnapshotData.html entre marcadores:
  * <!-- SNAPSHOT_CSV_BEGIN --> ... <!-- SNAPSHOT_CSV_END -->
  */
-function getEmbeddedSnapshotRows_() {
+function getEmbeddedSnapshotRows_(fields) {
   try {
     var raw = include('SnapshotData');
     var begin = '<!-- SNAPSHOT_CSV_BEGIN -->';
@@ -197,12 +518,18 @@ function getEmbeddedSnapshotRows_() {
     var matrix = Utilities.parseCsv(csv);
     if (!matrix || matrix.length < 2) return [];
     var headers = matrix[0].map(function(h){ return normalizeText_(h); });
+    var idx = {};
+    headers.forEach(function(h, i) { idx[h] = i; });
+    var pick = (fields && fields.length) ? fields : headers;
     var rows = [];
     for (var r = 1; r < matrix.length; r++) {
       var row = matrix[r];
       if (!row || row.join('') === '') continue;
       var obj = {};
-      for (var c = 0; c < headers.length; c++) obj[headers[c]] = row[c];
+      pick.forEach(function(h) {
+        var i = idx[h];
+        obj[h] = (i === undefined) ? '' : row[i];
+      });
       rows.push(obj);
     }
     return rows;
@@ -331,11 +658,11 @@ function saveEdition(sessionToken, editionData) {
 function listInvitations(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
   limit = Number(limit || 500);
-  var rows = getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
+  var fields = ['edition_id','email','estado','sent_at','opened_at','used_at','url_encuesta','token'];
+  var rows = getRecentRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS, limit, fields);
   rows.sort(function(a,b){
     return String(b.sent_at || b.opened_at || b.used_at || '').localeCompare(String(a.sent_at || a.opened_at || a.used_at || ''));
   });
-  var fields = ['edition_id','email','estado','sent_at','opened_at','used_at','url_encuesta','token'];
   return rows.slice(0, limit).map(function(r){
     var out = {};
     fields.forEach(function(f){ out[f] = r[f]; });
@@ -364,7 +691,7 @@ function createInvitations(sessionToken, data) {
       used_at: '',
       notes: normalizeText_(data.notes)
     };
-    appendObjectRow_(APP_CFG.SHEETS.INVITATIONS, row);
+    row.__rowNum = appendObjectRow_(APP_CFG.SHEETS.INVITATIONS, row);
     created.push(row);
   });
   auditLog_(actor.username, actor.role, 'create_invitations', 'invitation', editionId, { total: created.length });
@@ -374,6 +701,7 @@ function createInvitations(sessionToken, data) {
 function sendInvitations(sessionToken, data) {
   var actor = requireRole_(sessionToken, ['admin']);
   var created = createInvitations(sessionToken, data);
+  var ts = nowIso_();
   created.forEach(function(inv) {
     if (!inv.email) return;
     var subject = '[' + APP_CFG.ORG_NAME + '] Encuesta de colaboradores ' + inv.edition_id;
@@ -390,14 +718,11 @@ function sendInvitations(sessionToken, data) {
     MailApp.sendEmail(inv.email, subject, body);
   });
 
-  var rows = getRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS);
-  rows.forEach(function(r) {
-    var match = created.filter(function(c){ return c.token === r.token; })[0];
-    if (match) {
-      r.sent_at = nowIso_();
-      r.estado = 'Enviado';
-      updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, r.__rowNum, r);
-    }
+  created.forEach(function(inv) {
+    if (!inv.__rowNum) return;
+    inv.sent_at = ts;
+    inv.estado = 'Enviado';
+    updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, inv.__rowNum, inv);
   });
   auditLog_(actor.username, actor.role, 'send_invitations', 'invitation', activeEdition_(), { total: created.length });
   return { ok: true, total: created.length };
@@ -428,8 +753,11 @@ function updateConfig(sessionToken, pairs) {
 }
 
 function rebuildAnalytics() {
-  var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
-  if (!responseRows.length) return { ok: true, rows: 0 };
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
+    if (!responseRows.length) return { ok: true, rows: 0 };
 
   var responseHeaders = getHeader_(getSheet_(APP_CFG.SHEETS.RESPONSES));
   var analyticHeaders = responseHeaders.filter(function(h){ return APP_CFG.PII_FIELDS.indexOf(h) === -1; });
@@ -456,4 +784,9 @@ function rebuildAnalytics() {
   if (longRows.length) shL.getRange(2,1,longRows.length,longHeaders.length).setValues(longRows);
   bumpDashboardCacheVersion_();
   return { ok: true, rows: responseRows.length, longRows: longRows.length };
+  } catch (e) {
+    throw new Error('Sistema procesando datos. Intente nuevamente en unos segundos.');
+  } finally {
+    lock.releaseLock();
+  }
 }
