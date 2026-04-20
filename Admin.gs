@@ -45,6 +45,7 @@ function getDashboardSummary(sessionToken) {
   var directos = 0;
   var indirectos = 0;
   var conIps = 0;
+  var ipsAplicableTotal = 0;
   var calidadOk = 0;
   var calidadRevisar = 0;
   var calidadCritico = 0;
@@ -130,6 +131,7 @@ function getDashboardSummary(sessionToken) {
         directos: 0,
         indirectos: 0,
         conIps: 0,
+        ipsAplicable: 0,
         ok: 0,
         revisar: 0,
         critico: 0,
@@ -158,6 +160,9 @@ function getDashboardSummary(sessionToken) {
     if (tipoAll === 'Indirecto') edStats.indirectos++;
 
     var ipsAll = keyOf_(r.descuento_ips_actual);
+    if (ipsAll !== 'no aplica' && ipsAll !== 'no aplica (justificado)' && ipsAll !== 'justificado' && ipsAll.indexOf('justificad') === -1 && ipsAll !== 'inactivo') {
+      edStats.ipsAplicable++;
+    }
     if (isYesLike_(ipsAll)) edStats.conIps++;
 
     var calAll = classifyCalidad_(r.estado_calidad);
@@ -195,6 +200,8 @@ function getDashboardSummary(sessionToken) {
 
     var ips = keyOf_(r.descuento_ips_actual);
     inc_(byIpsActual, ips);
+    var isAplicable = (ips !== 'no aplica' && ips !== 'no aplica (justificado)' && ips !== 'justificado' && ips.indexOf('justificad') === -1 && ips !== 'inactivo');
+    if (isAplicable) ipsAplicableTotal++;
     if (isYesLike_(ips)) conIps++;
 
     var sal = keyOf_(r.salario_actual_banda);
@@ -213,10 +220,13 @@ function getDashboardSummary(sessionToken) {
     if (!isNaN(nf)) flagsSum += nf;
 
     // IPS por tipo (tabla/figura adicional)
-    if (!ipsByTipo[tipo]) ipsByTipo[tipo] = { tipo: tipo, conIps: 0, sinIps: 0, total: 0 };
+    if (!ipsByTipo[tipo]) ipsByTipo[tipo] = { tipo: tipo, conIps: 0, sinIps: 0, total: 0, aplicables: 0 };
     ipsByTipo[tipo].total++;
-    if (isYesLike_(ips)) ipsByTipo[tipo].conIps++;
-    else ipsByTipo[tipo].sinIps++;
+    if (isAplicable) {
+       ipsByTipo[tipo].aplicables++;
+       if (isYesLike_(ips)) ipsByTipo[tipo].conIps++;
+       else ipsByTipo[tipo].sinIps++;
+    }
 
     var edad = Number(r.edad);
     if (!isNaN(edad) && edad >= 15 && edad <= 80) {
@@ -264,7 +274,7 @@ function getDashboardSummary(sessionToken) {
   var editionStats = Object.keys(perEditionAll).map(function(k) {
     var st = perEditionAll[k];
     var edadP = st.edadesCount ? Math.round((st.edadesSum / st.edadesCount) * 10) / 10 : 0;
-    var ipsPct = st.total ? Math.round(st.conIps * 100 / st.total) : 0;
+    var ipsPct = st.ipsAplicable ? Math.round(st.conIps * 100 / st.ipsAplicable) : 0;
     var okPct = st.total ? Math.round(st.ok * 100 / st.total) : 0;
     var flagsP = st.total ? Math.round((st.flagsSum / st.total) * 10) / 10 : 0;
     return {
@@ -280,6 +290,7 @@ function getDashboardSummary(sessionToken) {
       revisar: st.revisar,
       critico: st.critico,
       conIps: st.conIps,
+      ipsAplicable: st.ipsAplicable,
       edadesSum: st.edadesSum,
       edadesCount: st.edadesCount,
       flagsSum: st.flagsSum
@@ -303,7 +314,8 @@ function getDashboardSummary(sessionToken) {
     directos:   directos,
     indirectos: indirectos,
     conIps:     conIps,
-    conIpsPct:  total ? Math.round(conIps * 100 / total) : 0,
+    ipsAplicable: ipsAplicableTotal,
+    conIpsPct:  ipsAplicableTotal ? Math.round(conIps * 100 / ipsAplicableTotal) : 0,
     edadProm:   edadProm,
     calidadOkPct: calidadOkPct,
     calidadOk: calidadOk,
@@ -438,9 +450,79 @@ function getCombinedAnalyticRows_() {
 }
 
 function getLiveTailLimit_() {
-  var raw = PropertiesService.getScriptProperties().getProperty('LIVE_TAIL_LIMIT');
-  var n = Number(raw);
-  return (!isNaN(n) && n > 0) ? n : 2500;
+  return 500;
+}
+
+// =========================================================================
+// SCRIPT DE CORRECCIÓN DE DATOS (Fase 2)
+// =========================================================================
+
+function patchIPSExceptions() {
+  var ss = getBackendSpreadsheet_();
+  var sheet = ss.getSheetByName(APP_CFG.SHEETS.ANALYTIC);
+  if(!sheet) throw new Error("No se encontro BASE_ANALITICA");
+  
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var nameIdx = headers.indexOf('nombre_completo_raw');
+  var ipsIdx = headers.indexOf('descuento_ips_actual');
+  
+  if (nameIdx === -1 || ipsIdx === -1) {
+    throw new Error("No se encontraron las columnas necesarias (nombre_completo_raw, descuento_ips_actual)");
+  }
+  
+  var OVERRIDES = {
+    "EDGAR DAVID ARGUELLO PEREIRA": "No aplica (Justificado)",
+    "ANICIA NOEMI GONZALEZ CENTURION": "No aplica (Justificado)",
+    "RENATO RAMON GONZALEZ CENTURION": "No aplica (Justificado)",
+    "WILSON DAVID BENITEZ FERNANDEZ": "No aplica (Justificado)",
+    "DOLLY GRICELDA MENDEZ CANTERO": "Sí",
+    "ELIAS SANTOS GOMES JUNIOR": "No aplica (Justificado)",
+    "EDSON FERREIRA DA SILVA": "No aplica (Justificado)",
+    "WILFRIDO PEREZ": "Sí",
+    "MIRIAM CORDEIRO ISTORI": "No aplica (Justificado)",
+    "MARIANO RAMON SALERMO RAMIREZ": "No aplica (Justificado)",
+    "MARIA CELESTE GONZALEZ GONZALEZ": "No aplica (Justificado)",
+    "ELBA MELGAREJO MORINIGO": "No aplica (Justificado)",
+    "OSCAR ARMANDO GAVILAN ROJAS": "No aplica (Justificado)",
+    "CRISTIAN ARIEL AVALOS CANO": "No aplica (Justificado)",
+    "ANDRES DANIEL CRISTALDO MALLORQUIN": "No aplica (Justificado)",
+    "MARCOS GARCÍA": "No aplica (Justificado)",
+    "MARCOS GARCIA": "No aplica (Justificado)",
+    "JOSÉ ROLANDO CHAMORRO LESME": "No aplica (Justificado)",
+    "JOSE ROLANDO CHAMORRO LESME": "No aplica (Justificado)",
+    "PERLA ORTIZ": "No aplica (Justificado)"
+  };
+  
+  var modCount = 0;
+  for (var i = 1; i < data.length; i++) {
+    var rawName = String(data[i][nameIdx] || '').trim().toUpperCase();
+    if (!rawName) continue;
+    
+    // Check if name is in overrides
+    var overrideValue = null;
+    for (var key in OVERRIDES) {
+      if (rawName.indexOf(key) > -1) {
+        overrideValue = OVERRIDES[key];
+        break;
+      }
+    }
+    
+    if (overrideValue) {
+      if (data[i][ipsIdx] !== overrideValue) {
+        data[i][ipsIdx] = overrideValue;
+        modCount++;
+      }
+    }
+  }
+  
+  if (modCount > 0) {
+    sheet.getRange(1, 1, data.length, headers.length).setValues(data);
+  }
+  
+  // Reconstruir los datos
+  rebuildAnalytics();
+  return "Se modificaron " + modCount + " registros.";
 }
 
 function getRecentRowsAsObjects_(sheetName, limit, fields) {
