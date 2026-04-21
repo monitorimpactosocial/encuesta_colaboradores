@@ -272,7 +272,7 @@ const AMBER_GRAD = function(i,nn){return 'hsl('+(35+i*(10/Math.max(nn-1,1)))+',8
 const INDIGO_GRAD = function(i,nn){return 'hsl('+(238+i*(15/Math.max(nn-1,1)))+','+(72-i*5)+'%,'+(40+i*5)+'%)';};
 
 function shortSalario(s){
-  return m[s]||s;
+  return s;
 }
 
 const SURVEY_VIS_DEP_FIELDS = {
@@ -466,10 +466,11 @@ function renderPanel(){
     {id:'dashboard',icon:'📊',label:'Resumen'},
     {id:'responses',icon:'📋',label:'Respuestas'},
     {id:'invitations',icon:'✉️',label:'Invitaciones'},
-    {id:'editions',icon:'📅',label:'Ediciones'}
+    {id:'editions',icon:'🗓️',label:'Ediciones'},
+    {id:'survey',icon:'📝',label:'Cuestionario'}
   ];
   if(b.user.role==='admin'){
-    tabs.push({id:'users',icon:'👤',label:'Usuarios'});
+    tabs.push({id:'users',icon:'👥',label:'Usuarios'});
     tabs.push({id:'config',icon:'⚙️',label:'Configuración'});
   }
   app.innerHTML=
@@ -544,12 +545,29 @@ function renderCurrentTab(){
   const tabHandlers={
     dashboard:renderDashboard, responses:renderResponses,
     invitations:renderInvitations, users:renderUsers,
-    config:renderConfig, editions:renderEditions
+    config:renderConfig, editions:renderEditions,
+    survey:renderSurvey
   };
   const handler=tabHandlers[state.activeTab];
   if(!handler){ view.innerHTML='<div class="card"><p class="muted">Vista no disponible.</p></div>'; return; }
   Promise.resolve(handler(view)).catch(function(err){setTabError(view,err,'No se pudo cargar la vista seleccionada.');});
 }
+
+// Utility: programmatic navigation (used by inline onclick handlers)
+window.nav = function(tabId) {
+  var idMap = {
+    'Dashboard':'dashboard','Resumen':'dashboard',
+    'Respuestas':'responses','Invitaciones':'invitations',
+    'Ediciones':'editions','Cuestionario':'survey',
+    'Usuarios':'users','Configuración':'config'
+  };
+  var id = idMap[tabId] || tabId;
+  state.activeTab = id;
+  [].forEach.call(document.querySelectorAll('.nav-item'), function(b){ b.classList.remove('active'); });
+  var btn = document.querySelector('.nav-item[data-tab="'+id+'"]');
+  if (btn) btn.classList.add('active');
+  renderCurrentTab();
+};
 
 /* ── DASHBOARD v3 ──────────────────────────────────── */
 function renderDashboard(view){
