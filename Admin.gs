@@ -76,6 +76,7 @@ function getDashboardSummary(sessionToken) {
   var byEstadoCalidad = {};
 
   var mTipo = {};
+  var mSexo = {};
   var mDept = {};
   var mEmpresa = {};
   var mSalario = {};
@@ -194,6 +195,7 @@ function getDashboardSummary(sessionToken) {
     }
 
     inc_(bySexo, keyOf_(r.sexo));
+    incM_(mSexo, ed, keyOf_(r.sexo));
     var dept = keyOf_(r.departamento_residencia);
     inc_(byDeptResidencia, dept);
     incM_(mDept, ed, dept);
@@ -344,6 +346,7 @@ function getDashboardSummary(sessionToken) {
     porEstadoCalidad:   mapToItems_(byEstadoCalidad),
     multi: {
       tipo: mTipo,
+      sexo: mSexo,
       dept: mDept,
       empresa: mEmpresa,
       salario: mSalario,
@@ -413,6 +416,45 @@ function listResponses(sessionToken, limit) {
   });
 }
 
+function getAnalyticHeaders_() {
+  var responseHeaders = getHeader_(getSheet_(APP_CFG.SHEETS.RESPONSES));
+  return responseHeaders.filter(function(h) { return APP_CFG.PII_FIELDS.indexOf(h) === -1; });
+}
+
+function appendResponsesToAnalytics_(responseRows) {
+  responseRows = Array.isArray(responseRows) ? responseRows.filter(Boolean) : [];
+  if (!responseRows.length) return { ok: true, rows: 0, longRows: 0 };
+
+  var analyticHeaders = getAnalyticHeaders_();
+  syncHeaders_(APP_CFG.SHEETS.ANALYTIC, analyticHeaders);
+  var shA = getSheet_(APP_CFG.SHEETS.ANALYTIC);
+  var analyticData = responseRows.map(function(r) {
+    return analyticHeaders.map(function(h) { return r[h] !== undefined ? r[h] : ''; });
+  });
+  if (analyticData.length) {
+    shA.getRange(shA.getLastRow() + 1, 1, analyticData.length, analyticHeaders.length).setValues(analyticData);
+  }
+
+  var longHeaders = ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor'];
+  syncHeaders_(APP_CFG.SHEETS.LONG, longHeaders);
+  var shL = getSheet_(APP_CFG.SHEETS.LONG);
+  var longRows = [];
+  responseRows.forEach(function(r) {
+    APP_CFG.LONG_FIELDS.forEach(function(f) {
+      var value = r[f];
+      if (value !== '' && value !== null && value !== undefined) {
+        longRows.push([r.edicion, r.fecha_encuesta, r.respondente_id, r.source_uuid, f, value]);
+      }
+    });
+  });
+  if (longRows.length) {
+    shL.getRange(shL.getLastRow() + 1, 1, longRows.length, longHeaders.length).setValues(longRows);
+  }
+
+  bumpDashboardCacheVersion_();
+  return { ok: true, rows: analyticData.length, longRows: longRows.length };
+}
+
 /**
  * Devuelve filas combinadas para analitica:
  * 1) snapshot embebido (historico, lectura rapida)
@@ -423,12 +465,9 @@ function getCombinedAnalyticRows_() {
   // Importante: CacheService tiene límite ~100KB por key; serializar arrays grandes
   // termina siendo más costoso y muchas veces no se guarda. Se prioriza velocidad.
   var fields = ANALYTIC_MIN_FIELDS_;
-  var snapRows = getEmbeddedSnapshotRows_(fields);
-  var liveRows = snapRows.length
-    ? getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, getLiveTailLimit_(), fields)
-    : getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, fields);
-  var out = [];
-  var seen = {};
+  var liveRows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, fields);
+  if (liveRows.length) return liveRows;
+  return getEmbeddedSnapshotRows_(fields);
 
   function addRow(r) {
     var key = normalizeText_(r.source_uuid);
@@ -785,6 +824,12 @@ function saveEdition(sessionToken, editionData) {
   else appendObjectRow_(APP_CFG.SHEETS.EDITIONS, record);
 
   if (record.status === 'Abierta') {
+    rows.forEach(function(r) {
+      if (normalizeText_(r.edition_id) !== id && normalizeText_(r.status) === 'Abierta') {
+        r.status = 'Cerrada';
+        updateRowByNumber_(APP_CFG.SHEETS.EDITIONS, r.__rowNum, r);
+      }
+    });
     var cfgRows = getRowsAsObjects_(APP_CFG.SHEETS.CONFIG);
     var activeRow = cfgRows.filter(function(r){ return r.clave === 'active_edition'; })[0];
     if (activeRow) {
@@ -896,16 +941,18 @@ function updateConfig(sessionToken, pairs) {
 function rebuildAnalytics() {
   try {
     var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
-    if (!responseRows.length) return { ok: true, rows: 0 };
-
-  var responseHeaders = getHeader_(getSheet_(APP_CFG.SHEETS.RESPONSES));
-  var analyticHeaders = responseHeaders.filter(function(h){ return APP_CFG.PII_FIELDS.indexOf(h) === -1; });
-  var analyticData = [analyticHeaders].concat(responseRows.map(function(r) {
-    return analyticHeaders.map(function(h){ return r[h]; });
-  }));
-  var shA = getSheet_(APP_CFG.SHEETS.ANALYTIC);
-  shA.clearContents();
-  shA.getRange(1,1,analyticData.length,analyticHeaders.length).setValues(analyticData);
+    var analyticHeaders = getAnalyticHeaders_();
+    var analyticData = responseRows.map(function(r) {
+      return analyticHeaders.map(function(h){ return r[h]; });
+    });
+    var shA = getSheet_(APP_CFG.SHEETS.ANALYTIC);
+    shA.clearContents();
+    if (analyticHeaders.length) {
+      shA.getRange(1,1,1,analyticHeaders.length).setValues([analyticHeaders]);
+    }
+    if (analyticData.length) {
+      shA.getRange(2,1,analyticData.length,analyticHeaders.length).setValues(analyticData);
+    }
 
   var longHeaders = ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor'];
   var longRows = [];

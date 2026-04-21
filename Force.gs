@@ -1,0 +1,3 @@
+function forceRebuildData() {
+  doRebuildAnalytics_();
+}

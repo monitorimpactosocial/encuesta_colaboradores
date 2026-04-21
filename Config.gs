@@ -19,9 +19,11 @@ var APP_CFG = {
   PII_FIELDS: ['nombre_completo', 'nombre_completo_raw', 'cedula', 'cedula_raw'],
   LONG_FIELDS: [
     'tipo_colaborador','area_colaborador_indirecto','cargo','sexo','edad','edad_grupo',
+    'estado_civil','nivel_educativo',
     'departamento_procedencia','pais_origen','distrito_procedencia','localidad_procedencia',
     'departamento_residencia','distrito_residencia','localidad_residencia','area_residencia',
-    'pertenece_comunidad_indigena','etnia','combustible_cocina','trabajaba_antes_paracel',
+    'pertenece_comunidad_indigena','etnia','tipo_vivienda','n_hijos','personas_hogar',
+    'combustible_cocina','medio_transporte','trabajaba_antes_paracel','antiguedad_empresa_banda','turno_trabajo',
     'salario_anterior_banda','descuento_ips_anterior','salario_actual_banda','descuento_ips_actual',
     'empresa_contratista'
   ]

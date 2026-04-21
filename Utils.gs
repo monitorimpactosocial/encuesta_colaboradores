@@ -116,7 +116,8 @@ function appendObjectRow_(sheetName, obj) {
 function updateRowByNumber_(sheetName, rowNumber, obj) {
   var sh = getSheet_(sheetName);
   var headers = getHeader_(sh);
-  var row = headers.map(function(h) { return obj[h] !== undefined ? obj[h] : sh.getRange(rowNumber, headers.indexOf(h) + 1).getValue(); });
+  var current = sh.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
+  var row = headers.map(function(h, i) { return obj[h] !== undefined ? obj[h] : current[i]; });
   sh.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
 }
 
@@ -130,6 +131,23 @@ function ensureHeaders_(sheetName, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sh;
+}
+
+function syncHeaders_(sheetName, headers) {
+  var sh = ensureHeaders_(sheetName, headers);
+  var current = getHeader_(sh);
+  var empty = current.length === 1 && current[0] === '';
+  if (empty || !current.length) {
+    sh.clear();
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return headers.slice();
+  }
+  var missing = headers.filter(function(h) { return current.indexOf(h) === -1; });
+  if (missing.length) {
+    sh.getRange(1, current.length + 1, 1, missing.length).setValues([missing]);
+    current = current.concat(missing);
+  }
+  return current;
 }
 
 function auditLog_(actor, role, action, entity, entityId, payload) {

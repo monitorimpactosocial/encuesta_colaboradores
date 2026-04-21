@@ -10,7 +10,9 @@ const state = {
   dashboardEdition: 'ALL',
   schema: null,
   token: (window.SERVER_CONTEXT && window.SERVER_CONTEXT.token) || '',
-  surveyStartedAt: localStorage.getItem('encuesta_colab_started_at') || '',
+  surveyStartedAt: '',
+  surveyDraft: {},
+  surveySectionIndex: 0,
   activeTab: 'dashboard',
   responsesData: null,
   responsesFilter: {search:'', tipo:'', calidad:''},
@@ -50,6 +52,7 @@ function call(name){
 function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(s){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]);}); }
 function n(v){ return Number(v)||0; }
 function safeParse(v,fb){ try{return JSON.parse(v);}catch(e){return fb;} }
+function normText(v){ return String(v==null?'':v).replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim(); }
 function setSession(token,user){ state.sessionToken=token||''; state.user=user||null; localStorage.setItem('encuesta_colab_session',state.sessionToken); }
 function clearSession(){ state.sessionToken=''; state.user=null; localStorage.removeItem('encuesta_colab_session'); }
 
@@ -278,6 +281,89 @@ function shortSalario(s){
     'Más de 30 millones':'> 30M','No informa':'No informa'
   };
   return m[s]||s;
+}
+
+const SURVEY_VIS_DEP_FIELDS = {
+  tipo_colaborador:1,
+  departamento_procedencia:1,
+  pertenece_comunidad_indigena:1,
+  combustible_cocina:1,
+  trabajaba_antes_paracel:1
+};
+
+function surveyDraftKey_(){ return 'encuesta_colab_draft_'+state.token; }
+function surveyStartKey_(){ return 'encuesta_colab_started_at_'+state.token; }
+function surveySections_(){ return (state.schema && Array.isArray(state.schema.sections)) ? state.schema.sections : []; }
+function surveyValues_(){ return state.surveyDraft || {}; }
+function saveSurveyDraft_(){ localStorage.setItem(surveyDraftKey_(), JSON.stringify(surveyValues_())); }
+function clearSurveyDraft_(){
+  localStorage.removeItem(surveyDraftKey_());
+  localStorage.removeItem(surveyStartKey_());
+  localStorage.removeItem('encuesta_colab_started_at');
+  state.surveyDraft = {};
+  state.surveyStartedAt = '';
+  state.surveySectionIndex = 0;
+}
+function surveyVisibleQuestions_(section){
+  return (section && Array.isArray(section.questions) ? section.questions : []).filter(function(q){
+    return !q.visibleIf || evalVis(q.visibleIf, surveyValues_());
+  });
+}
+function surveyMissingForSection_(section){
+  return surveyVisibleQuestions_(section).filter(function(q){
+    return q.required && !normText(surveyValues_()[q.field]);
+  });
+}
+function surveyProgress_(){
+  const sections = surveySections_();
+  const total = sections.length || 1;
+  const completed = sections.filter(function(sec){ return surveyMissingForSection_(sec).length === 0; }).length;
+  return { total: total, completed: completed, pct: Math.round(completed*100/total) };
+}
+function surveyFieldMeta_(field){
+  const map = {
+    nombre_completo:{placeholder:'Ej. Juan Perez Gonzalez', full:true, autocomplete:'name'},
+    cedula:{placeholder:'Solo numeros, sin puntos', inputmode:'numeric'},
+    edad:{placeholder:'Ej. 34', min:'18', max:'80'},
+    area_colaborador_indirecto:{placeholder:'Seleccione o escriba el area principal', full:true},
+    empresa_contratista:{placeholder:'Seleccione o escriba la empresa', full:true},
+    cargo:{placeholder:'Seleccione o escriba el cargo', full:true},
+    distrito_procedencia:{placeholder:'Seleccione o escriba el distrito'},
+    distrito_residencia:{placeholder:'Seleccione o escriba el distrito'},
+    localidad_procedencia:{placeholder:'Ej. barrio, compania o localidad'},
+    localidad_residencia:{placeholder:'Ej. barrio, compania o localidad'},
+    pais_origen:{placeholder:'Ej. Brasil, Argentina, Bolivia'},
+    combustible_cocina_otro:{placeholder:'Especifique el combustible'},
+    n_hijos:{placeholder:'Ej. 2', min:'0', max:'20'},
+    personas_hogar:{placeholder:'Ej. 4', min:'1', max:'20'}
+  };
+  return map[field] || {};
+}
+function renderSurveyQuestion_(q){
+  const meta = surveyFieldMeta_(q.field);
+  const val = surveyValues_()[q.field] || '';
+  const req = q.required ? ' <span class="req">*</span>' : '';
+  const wrapCls = 'survey-field' + (meta.full ? ' full' : '');
+  const attr = [
+    'data-field="'+esc(q.field)+'"',
+    meta.placeholder ? 'placeholder="'+esc(meta.placeholder)+'"' : '',
+    meta.inputmode ? 'inputmode="'+esc(meta.inputmode)+'"' : '',
+    meta.autocomplete ? 'autocomplete="'+esc(meta.autocomplete)+'"' : '',
+    meta.min ? 'min="'+esc(meta.min)+'"' : '',
+    meta.max ? 'max="'+esc(meta.max)+'"' : ''
+  ].filter(Boolean).join(' ');
+  let input = '';
+  if(q.type === 'select'){
+    input = '<select class="select" '+attr+'><option value=""></option>'+q.options.map(function(o){ return '<option'+(String(val)===String(o)?' selected':'')+'>'+esc(o)+'</option>'; }).join('')+'</select>';
+  }else if(q.type === 'select_or_text' || q.type === 'text_or_select'){
+    input = '<input list="dl_'+esc(q.field)+'" class="input" value="'+esc(val)+'" '+attr+'>'+
+      '<datalist id="dl_'+esc(q.field)+'">'+q.options.map(function(o){ return '<option value="'+esc(o)+'"></option>'; }).join('')+'</datalist>';
+  }else if(q.type === 'number'){
+    input = '<input class="input" type="number" value="'+esc(val)+'" '+attr+'>';
+  }else{
+    input = '<input class="input" value="'+esc(val)+'" '+attr+'>';
+  }
+  return '<div class="'+wrapCls+'" data-visible-if="'+esc(q.visibleIf||'')+'"><label class="label">'+esc(q.label)+req+'</label>'+input+'</div>';
 }
 
 /* ── Init ──────────────────────────────────────────── */
@@ -1199,7 +1285,7 @@ function renderSurveyLoading(){
 
 function loadSurveySchema(){
   call('getSurveySchema',state.token).then(function(schema){
-    state.schema=schema; renderSurvey();
+    state.schema=schema; renderSurveyV2();
   }).catch(function(err){
     app.innerHTML='<div class="survey-shell"><div class="card"><h3>No fue posible abrir la encuesta</h3><p class="muted">'+esc(err.message||err)+'</p></div></div>';
   });
@@ -1269,6 +1355,152 @@ function renderSurvey(){
       '</div></div>';
     }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
   };
+}
+
+function renderSurveyV2(){
+  const sections = surveySections_();
+  state.surveyDraft = safeParse(localStorage.getItem(surveyDraftKey_()), {});
+  if(!state.surveyStartedAt){
+    state.surveyStartedAt = localStorage.getItem(surveyStartKey_()) || localStorage.getItem('encuesta_colab_started_at') || new Date().toISOString();
+    localStorage.setItem(surveyStartKey_(), state.surveyStartedAt);
+  }
+  if(state.surveySectionIndex >= sections.length) state.surveySectionIndex = 0;
+
+  app.innerHTML =
+    '<div class="survey-shell survey-shell-rich">'+
+      '<div class="survey-hero">'+
+        '<div>'+
+          '<h2>'+esc(state.schema.editionId)+' Â· Encuesta de colaboradores</h2>'+
+          '<p>Acceso personalizado por enlace. El formulario estÃ¡ organizado en bloques cortos y guarda sus avances automÃ¡ticamente.</p>'+
+        '</div>'+
+        '<div class="survey-hero-tags">'+
+          '<span class="badge info">Autoguardado activo</span>'+
+          '<span class="badge muted">Confidencial</span>'+
+        '</div>'+
+      '</div>'+
+      '<div class="survey-layout">'+
+        '<aside class="card survey-sidebar">'+
+          '<div class="survey-sidebar-head">'+
+            '<div class="small muted">Progreso</div>'+
+            '<strong id="surveyProgressLabel"></strong>'+
+          '</div>'+
+          '<div class="survey-progress"><span id="surveyProgressBar"></span></div>'+
+          '<div id="surveySteps" class="survey-steps"></div>'+
+          '<div class="notice survey-note">Si cierra accidentalmente, puede continuar desde el mismo enlace y dispositivo.</div>'+
+          '<button class="btn btn-ghost btn-block" id="btnResetSurvey">Limpiar borrador local</button>'+
+        '</aside>'+
+        '<section class="card survey-panel">'+
+          '<div id="surveyForm"></div>'+
+        '</section>'+
+      '</div>'+
+    '</div>';
+
+  const host = document.getElementById('surveyForm');
+  const stepsHost = document.getElementById('surveySteps');
+  const progressLabel = document.getElementById('surveyProgressLabel');
+  const progressBar = document.getElementById('surveyProgressBar');
+
+  function renderSurveyChrome(){
+    const prog = surveyProgress_();
+    progressLabel.textContent = prog.completed+' / '+prog.total+' bloques completos';
+    progressBar.style.width = prog.pct+'%';
+    stepsHost.innerHTML = sections.map(function(sec, idx){
+      const missing = surveyMissingForSection_(sec).length;
+      const cls = idx === state.surveySectionIndex ? ' current' : (missing ? '' : ' done');
+      return '<button class="survey-step'+cls+'" data-step="'+idx+'">'+
+        '<span class="survey-step-index">'+(idx+1)+'</span>'+
+        '<span class="survey-step-copy"><strong>'+esc(sec.label)+'</strong><small>'+(missing ? (missing+' pendientes') : 'Completo')+'</small></span>'+
+      '</button>';
+    }).join('');
+    [].forEach.call(stepsHost.querySelectorAll('[data-step]'), function(btn){
+      btn.onclick = function(){
+        const target = Number(this.dataset.step);
+        if(target > state.surveySectionIndex && surveyMissingForSection_(sections[state.surveySectionIndex]).length){
+          toast('Complete los obligatorios del bloque actual antes de avanzar.','error');
+          return;
+        }
+        state.surveySectionIndex = target;
+        renderSurveySection();
+      };
+    });
+  }
+
+  function renderSurveySection(){
+    const sec = sections[state.surveySectionIndex];
+    const visible = surveyVisibleQuestions_(sec);
+    host.innerHTML =
+      '<div class="survey-panel-head">'+
+        '<div>'+
+          '<div class="small muted">Bloque '+(state.surveySectionIndex+1)+' de '+sections.length+'</div>'+
+          '<h3>'+esc(sec.label)+'</h3>'+
+        '</div>'+
+        '<span class="badge '+(surveyMissingForSection_(sec).length ? 'warn' : 'ok')+'">'+(surveyMissingForSection_(sec).length ? 'Pendiente' : 'Completo')+'</span>'+
+      '</div>'+
+      '<div class="survey-grid">'+
+        (visible.length ? visible.map(renderSurveyQuestion_).join('') : '<p class="muted">No hay preguntas visibles en este bloque.</p>')+
+      '</div>'+
+      '<div class="survey-nav">'+
+        '<button class="btn btn-ghost" id="btnPrevSurvey" '+(state.surveySectionIndex===0?'disabled':'')+'>Anterior</button>'+
+        '<div class="survey-nav-spacer"></div>'+
+        '<button class="btn '+(state.surveySectionIndex===sections.length-1?'btn-primary':'')+'" id="btnNextSurvey">'+(state.surveySectionIndex===sections.length-1?'Enviar encuesta':'Siguiente bloque')+'</button>'+
+      '</div>';
+
+    [].forEach.call(host.querySelectorAll('[data-field]'), function(el){
+      const field = el.dataset.field;
+      const sync = function(){
+        state.surveyDraft[field] = el.value;
+        saveSurveyDraft_();
+        if(SURVEY_VIS_DEP_FIELDS[field]) renderSurveySection();
+        else renderSurveyChrome();
+      };
+      el.addEventListener('input', sync);
+      el.addEventListener('change', sync);
+    });
+
+    document.getElementById('btnPrevSurvey').onclick = function(){
+      if(state.surveySectionIndex > 0){
+        state.surveySectionIndex--;
+        renderSurveySection();
+      }
+    };
+
+    document.getElementById('btnNextSurvey').onclick = function(){
+      const self = this;
+      const missing = surveyMissingForSection_(sec);
+      if(missing.length){
+        toast('Faltan campos obligatorios en este bloque: '+missing.map(function(q){ return q.label; }).join(', '),'error',4500);
+        return;
+      }
+      if(state.surveySectionIndex < sections.length - 1){
+        state.surveySectionIndex++;
+        renderSurveySection();
+        return;
+      }
+      btnLoad(self,'Enviando...');
+      const payload = Object.assign({}, surveyValues_(), { __client_started_at: state.surveyStartedAt });
+      call('submitSurvey',state.token,payload).then(function(){
+        clearSurveyDraft_();
+        app.innerHTML =
+          '<div class="survey-shell"><div class="card survey-success">'+
+            '<div class="survey-success-mark">âœ…</div>'+
+            '<h3>Encuesta registrada correctamente</h3>'+
+            '<p class="muted">Gracias por completar el formulario. Sus respuestas fueron guardadas de forma segura.</p>'+
+          '</div></div>';
+      }).catch(function(err){
+        toast(err.message||String(err),'error');
+        btnReset(self);
+      });
+    };
+
+    renderSurveyChrome();
+  }
+
+  document.getElementById('btnResetSurvey').onclick = function(){
+    clearSurveyDraft_();
+    loadSurveySchema();
+  };
+
+  renderSurveySection();
 }
 
 function renderQuestion(q,draft){

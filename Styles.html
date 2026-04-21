@@ -303,4 +303,120 @@ body{
 .chart-hd h3{font-size:14px;font-weight:800;color:var(--muted);text-transform:none;letter-spacing:0}
 .chart-total{font-size:11px;color:var(--primary);background:rgba(234,255,247,0.85);padding:4px 10px;border-radius:99px;font-weight:700;}
 
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.sep{border:none;border-top:1px solid rgba(6,78,59,0.10);margin:18px 0}
+.notice{
+  padding:12px 14px;
+  border:1px solid rgba(15,118,110,0.16);
+  background:rgba(236,253,245,0.82);
+  color:#065f46;
+  border-radius:12px;
+  font-size:13px;
+}
+.req{color:#e11d48}
+
+#toast-container{
+  position:fixed;
+  right:18px;
+  bottom:18px;
+  z-index:99999;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.toast{
+  min-width:220px;
+  max-width:320px;
+  padding:12px 14px;
+  border-radius:14px;
+  color:#fff;
+  box-shadow:var(--shadow);
+  opacity:0;
+  transform:translateY(8px);
+  transition:all .25s ease;
+}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.info{background:#0f766e}
+.toast.success{background:#16a34a}
+.toast.error{background:#dc2626}
+
+.survey-shell{max-width:1240px;margin:0 auto;padding:28px 18px 40px}
+.survey-shell-rich{padding-top:20px}
+.survey-hero{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:18px;
+  margin-bottom:18px;
+  padding:20px 22px;
+  border-radius:20px;
+  border:1px solid rgba(6,78,59,0.14);
+  background:
+    radial-gradient(circle at top right, rgba(16,185,129,0.22), transparent 34%),
+    linear-gradient(135deg, rgba(6,78,59,0.96), rgba(5,150,105,0.88));
+  color:#ecfdf5;
+  box-shadow:var(--shadow);
+}
+.survey-hero h2{margin:0 0 8px 0;font-size:28px;letter-spacing:-0.03em}
+.survey-hero p{margin:0;max-width:760px;color:rgba(236,253,245,0.85)}
+.survey-hero-tags{display:flex;gap:8px;flex-wrap:wrap}
+.survey-layout{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+.survey-sidebar{position:sticky;top:16px;padding:18px}
+.survey-sidebar-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.survey-progress{height:10px;border-radius:999px;background:rgba(6,78,59,0.10);overflow:hidden;margin-bottom:16px}
+.survey-progress span{
+  display:block;
+  height:100%;
+  width:0;
+  border-radius:999px;
+  background:linear-gradient(90deg, #10b981, #34d399);
+  transition:width .25s ease;
+}
+.survey-steps{display:flex;flex-direction:column;gap:10px}
+.survey-step{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  width:100%;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid rgba(6,78,59,0.10);
+  background:#fff;
+  text-align:left;
+  cursor:pointer;
+}
+.survey-step.current{border-color:rgba(6,78,59,0.28);background:rgba(236,253,245,0.85)}
+.survey-step.done{border-color:rgba(22,163,74,0.20);background:rgba(240,253,244,0.9)}
+.survey-step-index{
+  width:28px;height:28px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:12px;
+  background:rgba(6,78,59,0.10);color:var(--primary);flex:0 0 auto;
+}
+.survey-step.done .survey-step-index{background:#16a34a;color:#fff}
+.survey-step-copy{display:flex;flex-direction:column;gap:4px}
+.survey-step-copy strong{font-size:13px;color:var(--text)}
+.survey-step-copy small{font-size:11px;color:var(--muted)}
+.survey-note{margin-top:14px;margin-bottom:10px}
+.survey-panel{padding:22px}
+.survey-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:18px}
+.survey-panel-head h3{margin:2px 0 0 0;font-size:22px;letter-spacing:-0.03em}
+.survey-grid{display:grid;grid-template-columns:repeat(2, minmax(0,1fr));gap:14px}
+.survey-field.full{grid-column:1 / -1}
+.survey-nav{display:flex;align-items:center;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid rgba(6,78,59,0.10)}
+.survey-nav-spacer{flex:1}
+.survey-success{max-width:720px;margin:0 auto;text-align:center;padding:48px 28px}
+.survey-success-mark{font-size:56px;margin-bottom:14px}
+
+@media (max-width: 980px){
+  .survey-layout{grid-template-columns:1fr}
+  .survey-sidebar{position:static}
+}
+@media (max-width: 720px){
+  .survey-hero{padding:18px;flex-direction:column}
+  .survey-grid{grid-template-columns:1fr}
+  .survey-shell{padding:18px 12px 28px}
+}
+
 </style>

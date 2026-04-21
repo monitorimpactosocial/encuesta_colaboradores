@@ -113,6 +113,44 @@ function seedQuestionnaire() {
   var yn    = ['Sí','No'];
   var fuels = ['Gas','Electricidad','Leña','Carbón','Ninguno (no cocina)','Otro'];
 
+  var districts = [
+    'ConcepciÃ³n','Horqueta','Paso Barreto','Sargento JosÃ© FÃ©lix LÃ³pez','Arroyito','PuentesiÃ±o','Loreto','Azotey',
+    'Paso Horqueta','BelÃ©n','Bella Vista Norte','Yby YaÃº','AsunciÃ³n','San Lorenzo','Luque','Fernando de la Mora',
+    'San Pedro','Santa Rosa del Aguaray','Pedro Juan Caballero','Ciudad del Este','LambarÃ©','Ã‘emby','Villa Elisa',
+    'CapiatÃ¡','ItauguÃ¡','CaaguazÃº','CaazapÃ¡','Curuguaty','Natalio','San Estanislao','Coronel Oviedo',
+    'BenjamÃ­n Aceval','Hernandarias','Bella Vista','Limpio','Nueva Germania','Hugua Ã‘andu','San Alfredo',
+    'VallemÃ­','EncarnaciÃ³n'
+  ];
+  var indirectAreas = [
+    'Forestal','Industrial','LogÃ­stica y transporte','Seguridad','Servicios generales',
+    'AlimentaciÃ³n y cocina','ConstrucciÃ³n y obras','Administrativo / profesional','Otro'
+  ];
+  var companies = [
+    'TECNOFORESTAL','OAC MAQUINARIAS','LUSITANA','AGROGANADERA MARIA EUGENIA','PROSEGUR','RANCHO FORESTAL',
+    'CONSTRUCTORA JM','PLANSUR','GNF','FDE','BUREAU VERITAS','RED FORESTAL','TOCSA','ECOMIPA','FORMIGHIERI',
+    'CECON','DAF','HELITACTICA','FORESTADORA DEL ESTE','LO DE GANSO','SUDAMERIS BANK','RANCHALES','POR EL CHACO',
+    'EFISA','INFOMASTER','TECNOEDIL S A','AGRAFOREST','COPETROL','SACEEM','SJ GREEN','GANADERA VISTA ALEGRE',
+    'FRIGORIFICO CONCEPCION','INDEPENDIENTE'
+  ];
+  var cargos = [
+    'Ayudante de campo','Operador de maquinaria','Vigilante','Personal de campo','Operador','Chofer','Plantador',
+    'Servicios generales','Auxiliar de campo','Operador de tractor','Cocinera','Ayudante de cocina',
+    'Auxiliar administrativo','Asistente administrativo','Asistente forestal','Limpieza','PeÃ³n de campo','MecÃ¡nico',
+    'Montador','Enfermero','Tractorista','Mantenimiento','Chofer de colectivo','Encargado de campo',
+    'Patrullero','Oficial albaÃ±il','Electricista','TÃ©cnico de seguridad','Operador de pala cargadora',
+    'Analista ambiental'
+  ];
+  var civilStatus = ['Soltero/a','Casado/a','UniÃ³n libre','Separado/a','Divorciado/a','Viudo/a','Prefiero no responder'];
+  var education = [
+    'Sin escolaridad','Primaria incompleta','Primaria completa','Secundaria incompleta','Secundaria completa',
+    'TÃ©cnico','Universitario incompleto','Universitario completo','Posgrado'
+  ];
+  var housing = ['Propia','Alquilada','Cedida','Familiar','Otra'];
+  var transport = ['A pie','Bicicleta','Moto','Auto','Bus','Transporte de la empresa','Otro'];
+  var tenure = ['Menos de 6 meses','De 6 a 12 meses','1 a 2 aÃ±os','3 a 5 aÃ±os','6 a 10 aÃ±os','MÃ¡s de 10 aÃ±os'];
+  var shifts = ['Administrativo','Diurno','Nocturno','Rotativo','Por jornada / campo'];
+  var ethnicGroups = ['Ava GuaranÃ­','Mbya GuaranÃ­','NivaclÃ©','Enxet','SanapanÃ¡','Ayoreo','MakÃ¡','Qom / Toba','AngaitÃ©','Otro'];
+
   // Columns: section_order | section_id | section_label | question_order | field_name | label |
   //          input_type | required | options_json | visible_if | contains_pii | include_in_analytics
   var rows = [
@@ -124,25 +162,35 @@ function seedQuestionnaire() {
 
     [1,'S1','Identificación laboral', 20,'area_colaborador_indirecto',
       'Área del contratista / empresa',
-      'select_or_text', false, JSON.stringify(['Forestal','Industrial']),
+      'select_or_text', false, JSON.stringify(indirectAreas),
       'tipo_colaborador=Indirecto', false, true],
 
     [1,'S1','Identificación laboral', 30,'empresa_contratista',
       'Nombre de la empresa contratista principal',
-      'select', true, JSON.stringify(['TECNOFORESTAL','OAC MAQUINARIAS','LUSITANA','AGROGANADERA MARIA EUGENIA','RANCHO FORESTAL','PLANSUR','PROSEGUR','CONSTRUCTORA JM','BUREAU VERITAS','Otra (especificar)']),
+      'select_or_text', true, JSON.stringify(companies),
       'tipo_colaborador=Indirecto', false, true],
 
     [1,'S1','Identificación laboral', 35,'empresa_contratista_otra',
       'Especifique el nombre de la empresa contratista',
-      'text', true, '[]',
+      'select_or_text', true, JSON.stringify(cargos),
       'empresa_contratista=Otra (especificar)', false, true],
 
     [1,'S1','Identificación laboral', 40,'cargo',
       'Cargo o puesto',
-      'text', true, '[]',
+      'select_or_text', true, JSON.stringify(cargos),
       '', false, true],
 
     // ── Sección 2: Datos personales ─────────────────────────────────────
+    [1,'S1','IdentificaciÃ³n laboral', 50,'antiguedad_empresa_banda',
+      'Tiempo trabajando en Paracel o con su contratista actual',
+      'select', true, JSON.stringify(tenure),
+      '', false, true],
+
+    [1,'S1','IdentificaciÃ³n laboral', 60,'turno_trabajo',
+      'Turno o modalidad de trabajo',
+      'select', true, JSON.stringify(shifts),
+      '', false, true],
+
     [2,'S2','Datos personales', 10,'nombre_completo',
       'Nombre y apellido completo',
       'text', true, '[]',
@@ -164,6 +212,16 @@ function seedQuestionnaire() {
       '', false, true],
 
     // ── Sección 3: Procedencia ──────────────────────────────────────────
+    [2,'S2','Datos personales', 50,'estado_civil',
+      'Estado civil',
+      'select', true, JSON.stringify(civilStatus),
+      '', false, true],
+
+    [2,'S2','Datos personales', 60,'nivel_educativo',
+      'Nivel educativo alcanzado',
+      'select', true, JSON.stringify(education),
+      '', false, true],
+
     [3,'S3','Procedencia', 10,'departamento_procedencia',
       'Departamento de nacimiento',
       'select', true, JSON.stringify(depts),
@@ -176,7 +234,7 @@ function seedQuestionnaire() {
 
     [3,'S3','Procedencia', 30,'distrito_procedencia',
       'Distrito de nacimiento',
-      'text', false, '[]',
+      'select_or_text', true, JSON.stringify(districts),
       '', false, true],
 
     [3,'S3','Procedencia', 40,'localidad_procedencia',
@@ -192,7 +250,7 @@ function seedQuestionnaire() {
 
     [4,'S4','Residencia actual', 20,'distrito_residencia',
       'Distrito de residencia',
-      'text', false, '[]',
+      'select_or_text', true, JSON.stringify(districts),
       '', false, true],
 
     [4,'S4','Residencia actual', 30,'localidad_residencia',
@@ -217,17 +275,37 @@ function seedQuestionnaire() {
       'pertenece_comunidad_indigena=Sí', false, true],
 
     // ── Sección 6: Condiciones del hogar ────────────────────────────────
-    [6,'S6','Condiciones del hogar', 10,'combustible_cocina',
+    [6,'S6','Condiciones del hogar', 10,'tipo_vivienda',
+      'Tipo de vivienda',
+      'select', true, JSON.stringify(housing),
+      '', false, true],
+
+    [6,'S6','Condiciones del hogar', 15,'personas_hogar',
+      'Cantidad de personas en el hogar',
+      'number', true, '[]',
+      '', false, true],
+
+    [6,'S6','Condiciones del hogar', 18,'n_hijos',
+      'Cantidad de hijos',
+      'number', true, '[]',
+      '', false, true],
+
+    [6,'S6','Condiciones del hogar', 20,'combustible_cocina',
       'Combustible que usa principalmente para cocinar en su hogar',
       'select', true, JSON.stringify(fuels),
       '', false, true],
 
-    [6,'S6','Condiciones del hogar', 20,'combustible_cocina_otro',
+    [6,'S6','Condiciones del hogar', 30,'combustible_cocina_otro',
       'Especifique el otro combustible que usa',
       'text', false, '[]',
       'combustible_cocina=Otro', false, false],
 
     // ── Sección 7: Historial laboral anterior ───────────────────────────
+    [6,'S6','Condiciones del hogar', 40,'medio_transporte',
+      'Medio de transporte principal al trabajo',
+      'select', true, JSON.stringify(transport),
+      '', false, true],
+
     [7,'S7','Historial laboral anterior', 10,'trabajaba_antes_paracel',
       '¿Tenía trabajo antes de ingresar a Paracel?',
       'select', true, JSON.stringify(yn),

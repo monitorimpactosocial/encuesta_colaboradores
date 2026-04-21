@@ -85,7 +85,7 @@ function markInvitationOpened(token) {
   if (!inv) return { ok: false };
   if (!normalizeText_(inv.opened_at)) {
     inv.opened_at = nowIso_();
-    if (!normalizeText_(inv.estado)) inv.estado = 'Abierto';
+    if (String(inv.estado) !== 'Usado' && String(inv.estado) !== 'Anulado') inv.estado = 'Abierto';
     updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, inv.__rowNum, inv);
   }
   return { ok: true };
@@ -104,6 +104,10 @@ function submitSurvey(token, payload) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
+    inv = getInvitationByToken_(token);
+    if (!inv) throw new Error('Token invalido.');
+    if (String(inv.estado) === 'Usado') throw new Error('La encuesta ya fue respondida con este enlace.');
+    if (String(inv.estado) === 'Anulado') throw new Error('El enlace fue anulado.');
     appendObjectRow_(APP_CFG.SHEETS.RESPONSES, row);
 
     inv.estado = 'Usado';
@@ -111,14 +115,27 @@ function submitSurvey(token, payload) {
     if (!normalizeText_(inv.opened_at)) inv.opened_at = nowIso_();
     updateRowByNumber_(APP_CFG.SHEETS.INVITATIONS, inv.__rowNum, inv);
   } catch (e) {
+    if (e && e.message && (e.message.indexOf('ya fue respondida') > -1 || e.message.indexOf('anulado') > -1 || e.message.indexOf('Token invalido') > -1)) throw e;
     throw new Error('Servidor ocupado. Por favor, intente enviar de nuevo en unos segundos.');
   } finally {
     lock.releaseLock();
   }
 
-  rebuildAnalytics();
-  auditLog_(inv.email || 'token:' + token, 'respondent', 'submit_survey', 'response', row.source_uuid, { edition: row.edicion });
-  return { ok: true, responseId: row.source_uuid };
+  var analyticsUpdated = true;
+  try {
+    appendResponsesToAnalytics_([row]);
+  } catch (analyticsErr) {
+    analyticsUpdated = false;
+    auditLog_('system', 'system', 'analytics_append_error', 'response', row.source_uuid, {
+      edition: row.edicion,
+      message: analyticsErr.message || String(analyticsErr)
+    });
+  }
+  auditLog_(inv.email || 'token:' + token, 'respondent', 'submit_survey', 'response', row.source_uuid, {
+    edition: row.edicion,
+    analyticsUpdated: analyticsUpdated
+  });
+  return { ok: true, responseId: row.source_uuid, analyticsUpdated: analyticsUpdated };
 }
 
 function validatePayloadAgainstSchema_(sections, payload) {
@@ -173,6 +190,8 @@ function buildResponseRow_(payload, invitation) {
     flag_edad_corregida_signo: String(payload.edad).indexOf('-') === 0 ? 'Sí' : 'No',
     flag_edad_fuera_rango: 'No',
     edad_grupo: ageGroup_(payload.edad),
+    estado_civil: canonicalMarital_(payload.estado_civil),
+    nivel_educativo: canonicalEducation_(payload.nivel_educativo),
     departamento_procedencia_raw: normalizeText_(payload.departamento_procedencia),
     departamento_procedencia: canonicalDept_(payload.departamento_procedencia),
     pais_origen_raw: normalizeText_(payload.pais_origen),
@@ -188,13 +207,19 @@ function buildResponseRow_(payload, invitation) {
     localidad_residencia_raw: normalizeText_(payload.localidad_residencia),
     localidad_residencia: properCase_(payload.localidad_residencia),
     area_residencia: normalizeText_(payload.area_residencia),
+    tipo_vivienda: canonicalHousing_(payload.tipo_vivienda),
+    n_hijos: toNumberOrBlank_(payload.n_hijos),
+    personas_hogar: toNumberOrBlank_(payload.personas_hogar),
     pertenece_comunidad_indigena: canonicalYesNo_(payload.pertenece_comunidad_indigena),
     etnia_raw: normalizeText_(payload.etnia),
     etnia: properCase_(payload.etnia),
     combustible_cocina_raw: normalizeText_(payload.combustible_cocina),
     combustible_cocina: canonicalFuel_(payload.combustible_cocina),
     combustible_cocina_otro: normalizeText_(payload.combustible_cocina_otro),
+    medio_transporte: canonicalTransport_(payload.medio_transporte),
     trabajaba_antes_paracel: canonicalYesNo_(payload.trabajaba_antes_paracel),
+    antiguedad_empresa_banda: canonicalTenure_(payload.antiguedad_empresa_banda),
+    turno_trabajo: canonicalShift_(payload.turno_trabajo),
     salario_anterior_banda_raw: normalizeText_(payload.salario_anterior_banda),
     salario_anterior_banda: canonicalSalary_(payload.salario_anterior_banda),
     salario_anterior_orden: salaryOrder_(payload.salario_anterior_banda),
@@ -203,12 +228,12 @@ function buildResponseRow_(payload, invitation) {
     salario_actual_banda: canonicalSalary_(payload.salario_actual_banda),
     salario_actual_orden: salaryOrder_(payload.salario_actual_banda),
     descuento_ips_actual: canonicalYesNo_(payload.descuento_ips_actual),
-    empresa_contratista_raw: normalizeText_(payload.empresa_contratista === 'Otra (especificar)' ? payload.empresa_contratista_otra : payload.empresa_contratista),
-    empresa_contratista: canonicalCompany_(payload.empresa_contratista === 'Otra (especificar)' ? payload.empresa_contratista_otra : payload.empresa_contratista),
+    empresa_contratista_raw: normalizeText_(payload.empresa_contratista),
+    empresa_contratista: canonicalCompany_(payload.empresa_contratista),
     source_id: '',
     source_uuid: uuid_(),
     source_status: 'submitted_via_app',
-    source_version: 'webapp_v1',
+    source_version: 'webapp_v2',
     source_index: '',
     flag_duracion_atipica: 'No',
     flag_falta_area_indirecto: '',
@@ -274,12 +299,116 @@ function canonicalArea_(v) {
   var t = upperKey_(v);
   if (t === 'FORESTAL') return 'Forestal';
   if (t === 'INDUSTRIAL') return 'Industrial';
+  if (t.indexOf('LOGIST') > -1 || t.indexOf('TRANSPORT') > -1 || t.indexOf('CHOFER') > -1 || t.indexOf('TRACTOR') > -1 || t.indexOf('MAQUIN') > -1) return 'LogÃ­stica y transporte';
+  if (t.indexOf('SEGUR') > -1 || t.indexOf('VIGIL') > -1 || t.indexOf('PATRULL') > -1) return 'Seguridad';
+  if (t.indexOf('SERVICIO') > -1 || t.indexOf('LIMPIE') > -1 || t.indexOf('MANTEN') > -1) return 'Servicios generales';
+  if (t.indexOf('COCIN') > -1 || t.indexOf('ALIMENT') > -1) return 'AlimentaciÃ³n y cocina';
+  if (t.indexOf('CONSTRU') > -1 || t.indexOf('OBRA') > -1 || t.indexOf('MONTA') > -1 || t.indexOf('ALBAN') > -1) return 'ConstrucciÃ³n y obras';
+  if (t.indexOf('ADMIN') > -1 || t.indexOf('PROFES') > -1 || t.indexOf('AMBIENT') > -1 || t.indexOf('MEDIC') > -1 || t.indexOf('TECNIC') > -1) return 'Administrativo / profesional';
+  if (t === 'OTRO') return 'Otro';
   return properCase_(v);
 }
 
 function canonicalFuel_(v) {
   var t = upperKey_(v);
   var map = {'GAS':'Gas','ELECTRICIDAD':'Electricidad','LENA':'Leña','LEÑA':'Leña','CARBON':'Carbón','NINGUNO (NO COCINA)':'Ninguno (no cocina)','OTRO':'Otro'};
+  return map[t] || properCase_(v);
+}
+
+function canonicalMarital_(v) {
+  var t = upperKey_(v);
+  var map = {
+    'SOLTERO':'Soltero/a',
+    'SOLTERA':'Soltero/a',
+    'CASADO':'Casado/a',
+    'CASADA':'Casado/a',
+    'UNION LIBRE':'UniÃ³n libre',
+    'UNION DE HECHO':'UniÃ³n libre',
+    'CONCUBINATO':'UniÃ³n libre',
+    'SEPARADO':'Separado/a',
+    'SEPARADA':'Separado/a',
+    'DIVORCIADO':'Divorciado/a',
+    'DIVORCIADA':'Divorciado/a',
+    'VIUDO':'Viudo/a',
+    'VIUDA':'Viudo/a',
+    'PREFIERO NO RESPONDER':'Prefiero no responder'
+  };
+  return map[t] || properCase_(v);
+}
+
+function canonicalEducation_(v) {
+  var t = upperKey_(v);
+  var map = {
+    'SIN ESCOLARIDAD':'Sin escolaridad',
+    'PRIMARIA INCOMPLETA':'Primaria incompleta',
+    'PRIMARIA COMPLETA':'Primaria completa',
+    'SECUNDARIA INCOMPLETA':'Secundaria incompleta',
+    'SECUNDARIA COMPLETA':'Secundaria completa',
+    'TECNICO':'TÃ©cnico',
+    'TECNICO SUPERIOR':'TÃ©cnico',
+    'UNIVERSITARIO INCOMPLETO':'Universitario incompleto',
+    'UNIVERSITARIA INCOMPLETA':'Universitario incompleto',
+    'UNIVERSITARIO COMPLETO':'Universitario completo',
+    'UNIVERSITARIA COMPLETA':'Universitario completo',
+    'POSGRADO':'Posgrado'
+  };
+  return map[t] || properCase_(v);
+}
+
+function canonicalHousing_(v) {
+  var t = upperKey_(v);
+  var map = {
+    'PROPIA':'Propia',
+    'ALQUILADA':'Alquilada',
+    'CEDIDA':'Cedida',
+    'FAMILIAR':'Familiar',
+    'OTRA':'Otra'
+  };
+  return map[t] || properCase_(v);
+}
+
+function canonicalTransport_(v) {
+  var t = upperKey_(v);
+  var map = {
+    'A PIE':'A pie',
+    'BICICLETA':'Bicicleta',
+    'MOTO':'Moto',
+    'AUTO':'Auto',
+    'BUS':'Bus',
+    'TRANSPORTE DE LA EMPRESA':'Transporte de la empresa',
+    'TRANSPORTE PROVISTO POR LA EMPRESA':'Transporte de la empresa',
+    'OTRO':'Otro'
+  };
+  return map[t] || properCase_(v);
+}
+
+function canonicalTenure_(v) {
+  var t = upperKey_(v);
+  var map = {
+    'MENOS DE 6 MESES':'Menos de 6 meses',
+    'DE 6 A 12 MESES':'De 6 a 12 meses',
+    '1 A 2 ANOS':'1 a 2 aÃ±os',
+    '1 A 2 AÃ‘OS':'1 a 2 aÃ±os',
+    '3 A 5 ANOS':'3 a 5 aÃ±os',
+    '3 A 5 AÃ‘OS':'3 a 5 aÃ±os',
+    '6 A 10 ANOS':'6 a 10 aÃ±os',
+    '6 A 10 AÃ‘OS':'6 a 10 aÃ±os',
+    'MAS DE 10 ANOS':'MÃ¡s de 10 aÃ±os',
+    'MAS DE 10 AÃ‘OS':'MÃ¡s de 10 aÃ±os',
+    'MÃS DE 10 AÃ‘OS':'MÃ¡s de 10 aÃ±os'
+  };
+  return map[t] || normalizeText_(v);
+}
+
+function canonicalShift_(v) {
+  var t = upperKey_(v);
+  var map = {
+    'ADMINISTRATIVO':'Administrativo',
+    'DIURNO':'Diurno',
+    'NOCTURNO':'Nocturno',
+    'ROTATIVO':'Rotativo',
+    'POR JORNADA / CAMPO':'Por jornada / campo'
+  };
   return map[t] || properCase_(v);
 }
 
@@ -355,5 +484,29 @@ function canonicalCompany_(v) {
   if (t.indexOf('PROSEGUR') > -1) return 'PROSEGUR';
   if (['CONSTRUCTORA JM','JM CONSTRUCTORA','JM CONSTRUCCIONES','CONSTRUCTORA JM INGENIERIA','CONSTRUCTORA JM/ELECTROMECANICA SAN RAFAEL','CONSTRUCTORA JM KUROSU & CIA S A'].indexOf(t) > -1) return 'CONSTRUCTORA JM';
   if (t.indexOf('BUREAU VERITAS') > -1) return 'BUREAU VERITAS';
-  return t;
+  if (t.indexOf('GNF') > -1) return 'GNF';
+  if (t.indexOf('FDE') > -1) return 'FDE';
+  if (t.indexOf('INDEPENDIENTE') > -1) return 'INDEPENDIENTE';
+  if (t.indexOf('RED FORESTAL') > -1) return 'RED FORESTAL';
+  if (t.indexOf('TOCSA') > -1) return 'TOCSA';
+  if (t.indexOf('ECOMIPA') > -1) return 'ECOMIPA';
+  if (t.indexOf('FORMIGHIERI') > -1) return 'FORMIGHIERI';
+  if (t.indexOf('CECON') > -1) return 'CECON';
+  if (t.indexOf('DAF') > -1) return 'DAF';
+  if (t.indexOf('HELITACTICA') > -1) return 'HELITACTICA';
+  if (t.indexOf('FORESTADORA DEL ESTE') > -1) return 'FORESTADORA DEL ESTE';
+  if (t.indexOf('LO DE GANSO') > -1) return 'LO DE GANSO';
+  if (t.indexOf('SUDAMERIS') > -1) return 'SUDAMERIS BANK';
+  if (t.indexOf('RANCHALES') > -1) return 'RANCHALES';
+  if (t.indexOf('POR EL CHACO') > -1) return 'POR EL CHACO';
+  if (t.indexOf('EFISA') > -1) return 'EFISA';
+  if (t.indexOf('INFOMASTER') > -1) return 'INFOMASTER';
+  if (t.indexOf('TECNOEDIL') > -1) return 'TECNOEDIL S A';
+  if (t.indexOf('AGRAFOREST') > -1) return 'AGRAFOREST';
+  if (t.indexOf('COPETROL') > -1) return 'COPETROL';
+  if (t.indexOf('SACEEM') > -1) return 'SACEEM';
+  if (t.indexOf('SJ GREEN') > -1) return 'SJ GREEN';
+  if (t.indexOf('GANADERA VISTA ALEGRE') > -1) return 'GANADERA VISTA ALEGRE';
+  if (t.indexOf('FRIGOR') > -1 && t.indexOf('FICO') > -1) return 'FRIGORIFICO CONCEPCION';
+  return properCase_(t);
 }
