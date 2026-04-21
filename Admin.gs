@@ -33,7 +33,7 @@ var ANALYTIC_MIN_FIELDS_ = [
 
 function getDashboardSummary(sessionToken) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var cacheKey = 'dash_summary_multi_all_v2_' + getDashboardCacheVersion_();
+  var cacheKey = 'dash_summary_multi_all_v3_' + getDashboardCacheVersion_();
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -161,7 +161,8 @@ function getDashboardSummary(sessionToken) {
     if (tipoAll === 'Indirecto') edStats.indirectos++;
 
     var ipsAll = keyOf_(r.descuento_ips_actual);
-    if (ipsAll !== 'no aplica' && ipsAll !== 'no aplica (justificado)' && ipsAll !== 'justificado' && ipsAll.indexOf('justificad') === -1 && ipsAll !== 'inactivo') {
+    var ipsLow = ipsAll.toLowerCase();
+    if (ipsLow !== 'no aplica' && ipsLow !== 'no aplica (justificado)' && ipsLow !== 'justificado' && ipsLow.indexOf('justificad') === -1 && ipsLow !== 'inactivo') {
       edStats.ipsAplicable++;
     }
     if (isYesLike_(ipsAll)) edStats.conIps++;
