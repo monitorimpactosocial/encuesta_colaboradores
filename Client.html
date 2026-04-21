@@ -272,14 +272,6 @@ const AMBER_GRAD = function(i,nn){return 'hsl('+(35+i*(10/Math.max(nn-1,1)))+',8
 const INDIGO_GRAD = function(i,nn){return 'hsl('+(238+i*(15/Math.max(nn-1,1)))+','+(72-i*5)+'%,'+(40+i*5)+'%)';};
 
 function shortSalario(s){
-  const m={
-    'Menos del salario mínimo':'< Sal. mínimo','Salario mínimo':'Sal. mínimo',
-    'Más del salario mínimo y hasta 3 millones':'Sal. mín. – 3M','Más de 3 millones y hasta 5 millones':'3M – 5M',
-    'Más de 5 millones y hasta 7 millones':'5M – 7M','Más de 7 millones y hasta 10 millones':'7M – 10M',
-    'Más de 10 millones y hasta 13 millones':'10M – 13M','Más de 13 millones y hasta 15 millones':'13M – 15M',
-    'Más de 15 millones y hasta 20 millones':'15M – 20M','Más de 20 millones y hasta 30 millones':'20M – 30M',
-    'Más de 30 millones':'> 30M','No informa':'No informa'
-  };
   return m[s]||s;
 }
 
@@ -567,9 +559,10 @@ function renderDashboard(view){
   
   view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando tablero...</div></div>';
 
+  state.dashFilters = state.dashFilters || { tipo: '', calidad: '', sexo: '' };
   const loadData = state.fullSummary
     ? Promise.resolve(state.fullSummary)
-    : call('getDashboardSummary', state.sessionToken).then(function(d){
+    : call('getDashboardSummary', state.sessionToken, state.dashFilters).then(function(d){
         state.fullSummary=d; return d;
       });
 
@@ -724,15 +717,45 @@ function renderDashboard(view){
 
     view.innerHTML=
       '<div style="display:flex; flex-direction:row; gap:20px; align-items:flex-start;">'+
-        '<aside class="card" style="width:240px; flex-shrink:0; position:sticky; top:20px;">'+
-          '<h3 style="margin-bottom:12px; font-size:16px;">Filtros de Edición</h3>'+
-          '<p class="muted small" style="margin-bottom:16px;">Selecciona uno o varios años para comparar.</p>'+
-          '<div style="display:flex; flex-direction:column; gap:8px;" id="dashEditionFilters">'+
-            editionOptions.map(function(opt){
-              if(opt.value==='ALL') return '';
-              const isSelected = edFilters.length === 0 || edFilters.indexOf(opt.value) > -1;
-              return '<button class="btn '+(isSelected?'btn-primary':'btn-ghost')+' filter-btn" data-ed="'+esc(opt.value)+'" style="justify-content:flex-start; text-align:left;">'+(isSelected?'✓ ':'') + esc(opt.label)+'</button>';
-            }).join('')+
+        '<aside class="card" style="width:260px; flex-shrink:0; position:sticky; top:20px;">'+
+          '<h3 style="margin-bottom:12px; font-size:16px;">Filtros Avanzados</h3>'+
+          '<p class="muted small" style="margin-bottom:16px;">Refina el tablero por múltiples criterios.</p>'+
+          '<div style="display:flex; flex-direction:column; gap:12px;" id="dashFiltersPanel">'+
+            '<div>'+
+              '<label class="muted small" style="font-weight:700;">Edición</label>'+
+              '<div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;" id="dashEditionFilters">'+
+                editionOptions.map(function(opt){
+                  if(opt.value==='ALL') return '';
+                  const isSelected = edFilters.length === 0 || edFilters.indexOf(opt.value) > -1;
+                  return '<button class="btn '+(isSelected?'btn-primary':'btn-ghost')+' filter-btn" data-ed="'+esc(opt.value)+'" style="justify-content:flex-start; text-align:left;">'+(isSelected?'✓ ':'') + esc(opt.label)+'</button>';
+                }).join('')+
+              '</div>'+
+            '</div>'+
+            '<div>'+
+              '<label class="muted small" style="font-weight:700; display:block; margin-bottom:4px;">Tipo de Colaborador</label>'+
+              '<select id="dashFilterTipo" class="cfg" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">'+
+                '<option value="">Todos</option>'+
+                '<option value="Directo" '+(state.dashFilters.tipo==='Directo'?'selected':'')+'>Directo</option>'+
+                '<option value="Indirecto" '+(state.dashFilters.tipo==='Indirecto'?'selected':'')+'>Indirecto</option>'+
+              '</select>'+
+            '</div>'+
+            '<div>'+
+              '<label class="muted small" style="font-weight:700; display:block; margin-bottom:4px;">Calidad de Datos</label>'+
+              '<select id="dashFilterCalidad" class="cfg" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">'+
+                '<option value="">Todos</option>'+
+                '<option value="ok" '+(state.dashFilters.calidad==='ok'?'selected':'')+'>OK</option>'+
+                '<option value="revisar" '+(state.dashFilters.calidad==='revisar'?'selected':'')+'>Revisar</option>'+
+                '<option value="critico" '+(state.dashFilters.calidad==='critico'?'selected':'')+'>Crítico</option>'+
+              '</select>'+
+            '</div>'+
+            '<div>'+
+              '<label class="muted small" style="font-weight:700; display:block; margin-bottom:4px;">Sexo</label>'+
+              '<select id="dashFilterSexo" class="cfg" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">'+
+                '<option value="">Todos</option>'+
+                '<option value="Hombre" '+(state.dashFilters.sexo==='Hombre'?'selected':'')+'>Hombre</option>'+
+                '<option value="Mujer" '+(state.dashFilters.sexo==='Mujer'?'selected':'')+'>Mujer</option>'+
+              '</select>'+
+            '</div>'+
             '<button class="btn btn-secondary" id="dashRefresh" title="Actualizar datos" style="margin-top:16px;">↻ Sincronizar datos</button>'+
           '</div>'+
         '</aside>'+
@@ -763,10 +786,6 @@ function renderDashboard(view){
                 '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Top Empresa</div>'+
                 '<div style="color: var(--primary); font-size: 15px; font-weight: 900; margin-top: 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="'+esc(topEmp.label)+'">'+esc(topEmp.label)+' <span style="font-size:12px; color:var(--muted); font-weight:700;">('+n(topEmp.value)+')</span></div>'+
               '</div>' : '')+
-              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid var(--primary);">'+
-                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Cuestionario</div>'+
-                '<div style="margin-top:4px;"><a href="#" onclick="renderSurvey(); return false;" class="btn btn-primary" style="padding:4px 8px; font-size:12px;">Previsualizar Encuesta</a></div>'+
-              '</div>'+
             '</div>'+
           '</div>'+
 
@@ -820,6 +839,15 @@ function renderDashboard(view){
           renderTopItemsTable(s.topEmpresasIndirecto)+
         '</div>'+
       '</div>'+
+      '<div class="card" style="margin-top:18px; padding:24px; background: rgba(15,118,110,0.05); border:1px solid rgba(15,118,110,0.2);">'+
+        '<div class="spread">'+
+          '<div>'+
+            '<h3 style="margin-bottom:8px; color:var(--primary);">Previsualización Rápida de Datos</h3>'+
+            '<p class="muted small">Para explorar, filtrar y exportar los registros completos, visita la base analítica interactiva.</p>'+
+          '</div>'+
+          '<button class="btn btn-primary" onclick="window.nav(\'Respuestas\'); return false;" style="font-weight:600;">Ir a Base Analítica</button>'+
+        '</div>'+
+      '</div>'+
       '</div></div>';
 
     [].forEach.call(document.querySelectorAll('.filter-btn'), function(btn) {
@@ -833,6 +861,12 @@ function renderDashboard(view){
         renderDashboard(view);
       };
     });
+    ['dashFilterTipo','dashFilterCalidad','dashFilterSexo'].forEach(function(id){
+      document.getElementById(id).onchange = function(){
+        state.dashFilters[id.replace('dashFilter','').toLowerCase()] = this.value;
+      };
+    });
+
     document.getElementById('dashRefresh').onclick=function(){
       delete state.fullSummary;
       renderDashboard(view);

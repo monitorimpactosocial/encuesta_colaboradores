@@ -31,9 +31,13 @@ var ANALYTIC_MIN_FIELDS_ = [
   'source_uuid'
 ];
 
-function getDashboardSummary(sessionToken) {
+function getDashboardSummary(sessionToken, filters) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var cacheKey = 'dash_summary_multi_all_v4_' + getDashboardCacheVersion_();
+  var cacheKey = 'dash_summary_multi_all_v5_' + getDashboardCacheVersion_();
+  if (filters && Object.keys(filters).length) {
+    cacheKey += '_' + Utilities.base64Encode(JSON.stringify(filters));
+  }
+  
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -41,6 +45,21 @@ function getDashboardSummary(sessionToken) {
   }
 
   var allRows = getCombinedAnalyticRows_();
+  if (filters) {
+    allRows = allRows.filter(function(r) {
+      if (filters.tipo && normalizeText_(r.tipo_colaborador) !== normalizeText_(filters.tipo)) return false;
+      if (filters.sexo && normalizeText_(r.sexo) !== normalizeText_(filters.sexo)) return false;
+      if (filters.calidad) {
+        var t = normalizeText_(r.estado_calidad).toLowerCase();
+        var cal = 'ok';
+        if (t.indexOf('crit') > -1) cal = 'critico';
+        else if (t.indexOf('revis') > -1) cal = 'revisar';
+        else if (!t) cal = 'sin dato';
+        if (cal !== filters.calidad) return false;
+      }
+      return true;
+    });
+  }
   var total = 0;
   var directos = 0;
   var indirectos = 0;
