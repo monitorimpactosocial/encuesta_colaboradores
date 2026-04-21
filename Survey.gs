@@ -416,8 +416,19 @@ function canonicalSalary_(v) {
   var k = normalizeText_(v).toLowerCase();
   var map = {
     'menos del salario mínimo': 'Menos del salario mínimo',
-    'menos del salario mínimo (menos de gs. 2.680.373)': 'Menos del salario mínimo',
+    '< sal. mínimo': 'Menos del salario mínimo',
+    'sal. mínimo': 'Salario mínimo',
     'salario mínimo': 'Salario mínimo',
+    'sal. mín. - 3m': 'Más del salario mínimo y hasta 3 millones',
+    '3m - 5m': 'Más de 3 millones y hasta 5 millones',
+    '5m - 7m': 'Más de 5 millones y hasta 7 millones',
+    '7m - 10m': 'Más de 7 millones y hasta 10 millones',
+    '10m - 13m': 'Más de 10 millones y hasta 13 millones',
+    '13m - 15m': 'Más de 13 millones y hasta 15 millones',
+    '15m - 20m': 'Más de 15 millones y hasta 20 millones',
+    '20m - 30m': 'Más de 20 millones y hasta 30 millones',
+    '> 30m': 'Más de 30 millones',
+    'menos del salario mínimo (menos de gs. 2.680.373)': 'Menos del salario mínimo',
     'salario mínimo (gs. 2.680.373)': 'Salario mínimo',
     'más del salario mínimo y hasta 3 millones': 'Más del salario mínimo y hasta 3 millones',
     'más de 3 millones y hasta 5 millones': 'Más de 3 millones y hasta 5 millones',
@@ -431,7 +442,7 @@ function canonicalSalary_(v) {
     'no informa': 'No informa',
     'no quiso dar información': 'No informa'
   };
-  return map[k] || normalizeText_(v);
+  return map[k] || properCase_(v);
 }
 
 function salaryOrder_(v) {

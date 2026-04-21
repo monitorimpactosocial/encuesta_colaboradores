@@ -763,35 +763,32 @@ function renderDashboard(view){
                 '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Top Empresa</div>'+
                 '<div style="color: var(--primary); font-size: 15px; font-weight: 900; margin-top: 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="'+esc(topEmp.label)+'">'+esc(topEmp.label)+' <span style="font-size:12px; color:var(--muted); font-weight:700;">('+n(topEmp.value)+')</span></div>'+
               '</div>' : '')+
-              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid '+(delta>=10?'#16a34a':delta>=0?'#d97706':'#dc2626')+';">'+
-                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Últimos 30 días</div>'+
-                '<div style="color: var(--primary); font-size: 20px; font-weight: 900; margin-top: 4px;">'+last30+' <span style="font-size:14px; color:'+(delta>=10?'#16a34a':delta>=0?'#d97706':'#dc2626')+'; font-weight:800;">('+deltaTxt+')</span></div>'+
+              '<div style="border: 1px solid rgba(6,78,59,0.12); background: rgba(255,255,255,0.9); border-radius: 10px; padding: 12px; border-left: 4px solid var(--primary);">'+
+                '<div style="color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase;">Cuestionario</div>'+
+                '<div style="margin-top:4px;"><a href="#" onclick="renderSurvey(); return false;" class="btn btn-primary" style="padding:4px 8px; font-size:12px;">Previsualizar Encuesta</a></div>'+
               '</div>'+
             '</div>'+
           '</div>'+
 
       '<div class="kpi-row">'+
         kpiTile('Registros', total.toLocaleString(), (edFilters.length?edFilters.join(', '):'Todas las ediciones'), 'emph')+
-        kpiTile('Calidad OK', calidadOkPct+'%', ok.toLocaleString()+' OK · '+rev.toLocaleString()+' revisar · '+crit.toLocaleString()+' crítico')+
         kpiTile('Cobertura IPS', ipsPct+'%', conIps.toLocaleString()+' cotizan de '+ipsAplicable.toLocaleString()+' aplicables (se excluyen justificados y consultores)')+
         kpiTile('Edad promedio', edadProm, 'Rango válido 15–80')+
-        kpiTile('Últimos 7 días', last7, 'Actividad reciente')+
-        kpiTile('Flags promedio', flagsProm, 'Por registro')+
       '</div>'+
 
       '<div class="grid-2" style="margin-top:16px">'+
-        '<div class="card"><div class="chart-hd"><h3>Tendencia mensual</h3><span class="chart-total">últimos '+(Array.isArray(s.serieMes)?s.serieMes.length:0)+'</span></div><div style="position:relative;height:240px;width:100%"><canvas id="cSerieMes"></canvas></div></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Directos vs indirectos</h3><span class="chart-total">por edición</span></div><div style="position:relative;height:240px;width:100%"><canvas id="cTipoEd"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Tendencia mensual</h3><span class="chart-total">últimos '+(Array.isArray(s.serieMes)?s.serieMes.length:0)+'</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Volumen de encuestas completadas por mes, útil para identificar picos de recolección.</p><div style="position:relative;height:240px;width:100%"><canvas id="cSerieMes"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Directos vs indirectos</h3><span class="chart-total">por edición</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Proporción de colaboradores directos e indirectos encuestados a lo largo del tiempo.</p><div style="position:relative;height:240px;width:100%"><canvas id="cTipoEd"></canvas></div></div>'+
       '</div>'+
 
       '<div class="grid-2" style="margin-top:16px">'+
-        '<div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><div style="position:relative;height:360px;width:100%"><canvas id="cDept"></canvas></div></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Empresas contratistas (indirectos)</h3><span class="chart-total">top 12</span></div><div style="position:relative;height:360px;width:100%"><canvas id="cEmp"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Departamento de residencia</h3><span class="chart-total">top 15</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Distribución geográfica de los encuestados según su lugar de residencia principal.</p><div style="position:relative;height:360px;width:100%"><canvas id="cDept"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Empresas contratistas (indirectos)</h3><span class="chart-total">top 12</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Principales empresas contratistas que agrupan a los colaboradores indirectos encuestados.</p><div style="position:relative;height:360px;width:100%"><canvas id="cEmp"></canvas></div></div>'+
       '</div>'+
 
       '<div class="grid-2" style="margin-top:16px">'+
-        '<div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">'+total+' resp.</span></div><div style="position:relative;height:320px;width:100%"><canvas id="cSal"></canvas></div></div>'+
-        '<div class="card"><div class="chart-hd"><h3>Calidad por edición</h3><span class="chart-total">OK / Revisar / Crítico</span></div><div style="position:relative;height:320px;width:100%"><canvas id="cCalEd"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Salario actual</h3><span class="chart-total">'+total+' resp.</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Distribución de ingresos declarados, agrupados en bandas salariales.</p><div style="position:relative;height:320px;width:100%"><canvas id="cSal"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Calidad por edición</h3><span class="chart-total">OK / Revisar / Crítico</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Evolución de la calidad de los datos recolectados (flags del algoritmo).</p><div style="position:relative;height:320px;width:100%"><canvas id="cCalEd"></canvas></div></div>'+
       '</div>'+
 
       '<div class="grid-2" style="margin-top:16px">'+
@@ -843,7 +840,7 @@ function renderDashboard(view){
 
     requestAnimationFrame(function(){
       const serie=Array.isArray(s.serieMes)?s.serieMes:[];
-      lineChart('cSerieMes', serie.map(function(x){return x.label;}), serie.map(function(x){return n(x.value);}), '#0f766e');
+      vbar('cSerieMes', serie, '#0f766e');
 
       const te=(Array.isArray(s.tipoPorEdicion)?s.tipoPorEdicion:[]).filter(function(x){
         return edFilters.length === 0 || edFilters.indexOf(x.edicion) > -1;

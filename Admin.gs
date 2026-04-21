@@ -33,7 +33,7 @@ var ANALYTIC_MIN_FIELDS_ = [
 
 function getDashboardSummary(sessionToken) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var cacheKey = 'dash_summary_multi_all_v3_' + getDashboardCacheVersion_();
+  var cacheKey = 'dash_summary_multi_all_v4_' + getDashboardCacheVersion_();
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -190,7 +190,7 @@ function getDashboardSummary(sessionToken) {
     if (tipo === 'Indirecto') {
       indirectos++;
       inc_(byAreaIndirecto, keyOf_(r.area_colaborador_indirecto));
-      var emp = keyOf_(r.empresa_contratista);
+      var emp = canonicalCompany_(r.empresa_contratista) || 'Sin dato';
       inc_(byEmpresaIndirecto, emp);
       incM_(mEmpresa, ed, emp);
     }
@@ -203,11 +203,12 @@ function getDashboardSummary(sessionToken) {
 
     var ips = keyOf_(r.descuento_ips_actual);
     inc_(byIpsActual, ips);
-    var isAplicable = (ips !== 'no aplica' && ips !== 'no aplica (justificado)' && ips !== 'justificado' && ips.indexOf('justificad') === -1 && ips !== 'inactivo');
+    var ipsLow = ips.toLowerCase();
+    var isAplicable = (ipsLow !== 'no aplica' && ipsLow !== 'no aplica (justificado)' && ipsLow !== 'justificado' && ipsLow.indexOf('justificad') === -1 && ipsLow !== 'inactivo');
     if (isAplicable) ipsAplicableTotal++;
     if (isYesLike_(ips)) conIps++;
 
-    var sal = keyOf_(r.salario_actual_banda);
+    var sal = canonicalSalary_(r.salario_actual_banda) || 'Sin dato';
     inc_(bySalario, sal);
     incM_(mSalario, ed, sal);
 
