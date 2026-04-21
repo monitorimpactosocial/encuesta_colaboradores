@@ -912,8 +912,19 @@ function renderResponses(view){
       {k:'edad',l:'Edad',s:1},{k:'departamento_residencia',l:'Dpto.',s:1},
       {k:'salario_actual_banda',l:'Salario',s:1},{k:'descuento_ips_actual',l:'IPS',s:1},
       {k:'empresa_contratista',l:'Empresa',s:1},{k:'estado_calidad',l:'Calidad',s:1},
-      {k:'n_flags',l:'Flags',s:1},{k:'respondente_id',l:'ID anon.'}
+      {k:'n_flags',l:'Flags',s:1}
     ];
+
+    if(rows && rows.length){
+      var existingKeys = cols.map(function(c){ return c.k; });
+      existingKeys.push('respondente_id'); // We add this at the end manually
+      Object.keys(rows[0]).forEach(function(k){
+        if(existingKeys.indexOf(k) === -1 && k.indexOf('flag_') === -1 && k.indexOf('_raw') === -1 && k !== 'obs'){
+          cols.push({k:k, l:k.replace(/_/g,' ').replace(/^./, function(match){return match.toUpperCase();}), s:1});
+        }
+      });
+      cols.push({k:'respondente_id',l:'ID anon.'});
+    }
 
     function applyFilters(r){
       const f=state.responsesFilter;
