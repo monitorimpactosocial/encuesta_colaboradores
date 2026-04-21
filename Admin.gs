@@ -33,7 +33,7 @@ var ANALYTIC_MIN_FIELDS_ = [
 
 function getDashboardSummary(sessionToken) {
   requireRole_(sessionToken, ['admin','viewer']);
-  var cacheKey = 'dash_summary_multi_all_' + getDashboardCacheVersion_();
+  var cacheKey = 'dash_summary_multi_all_v2_' + getDashboardCacheVersion_();
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -402,7 +402,7 @@ function sortGrupoEdad_(items) {
 function listResponses(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
   limit = Number(limit || 200);
-  var rows = getCombinedAnalyticRows_();
+  var rows = getCombinedAnalyticRows_(null); // Pass null to get all fields
   rows.sort(function(a,b){
     var vA = a.submission_ts || '';
     var vB = b.submission_ts || '';
@@ -456,10 +456,8 @@ function appendResponsesToAnalytics_(responseRows) {
  * 2) filas live desde BASE_ANALITICA (respuestas nuevas)
  * La deduplicacion se hace por source_uuid y fallback por (edicion|respondente_id|fecha_encuesta).
  */
-function getCombinedAnalyticRows_() {
-  // Importante: CacheService tiene límite ~100KB por key; serializar arrays grandes
-  // termina siendo más costoso y muchas veces no se guarda. Se prioriza velocidad.
-  var fields = ANALYTIC_MIN_FIELDS_;
+function getCombinedAnalyticRows_(fieldsReq) {
+  var fields = fieldsReq !== undefined ? fieldsReq : ANALYTIC_MIN_FIELDS_;
   var liveRows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, fields);
   if (liveRows.length) return liveRows;
   return getEmbeddedSnapshotRows_(fields);
@@ -937,6 +935,7 @@ function updateConfig(sessionToken, pairs) {
 
 function rebuildAnalytics() {
   try {
+    bumpDashboardCacheVersion_(); // Invalidate cache immediately
     var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
     var analyticHeaders = getAnalyticHeaders_();
     var analyticData = responseRows.map(function(r) {
