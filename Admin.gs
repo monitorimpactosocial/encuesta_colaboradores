@@ -403,17 +403,12 @@ function listResponses(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
   limit = Number(limit || 200);
   var rows = getCombinedAnalyticRows_();
-  rows.sort(function(a,b){ return String(b.submission_ts).localeCompare(String(a.submission_ts)); });
-  var fields = [
-    'edicion','fecha_encuesta','tipo_colaborador','sexo','edad',
-    'departamento_residencia','salario_actual_banda','descuento_ips_actual',
-    'empresa_contratista','estado_calidad','n_flags','respondente_id'
-  ];
-  return rows.slice(0, limit).map(function(r){
-    var out = {};
-    fields.forEach(function(f){ out[f] = r[f]; });
-    return out;
+  rows.sort(function(a,b){
+    var vA = a.submission_ts || '';
+    var vB = b.submission_ts || '';
+    return vA > vB ? -1 : (vA < vB ? 1 : 0);
   });
+  return rows.slice(0, limit);
 }
 
 function getAnalyticHeaders_() {
@@ -847,7 +842,9 @@ function listInvitations(sessionToken, limit) {
   var fields = ['edition_id','email','estado','sent_at','opened_at','used_at','url_encuesta','token'];
   var rows = getRecentRowsAsObjects_(APP_CFG.SHEETS.INVITATIONS, limit, fields);
   rows.sort(function(a,b){
-    return String(b.sent_at || b.opened_at || b.used_at || '').localeCompare(String(a.sent_at || a.opened_at || a.used_at || ''));
+    var vA = String(a.sent_at || a.opened_at || a.used_at || '');
+    var vB = String(b.sent_at || b.opened_at || b.used_at || '');
+    return vA > vB ? -1 : (vA < vB ? 1 : 0);
   });
   return rows.slice(0, limit).map(function(r){
     var out = {};
