@@ -331,6 +331,20 @@ function surveyMissingForSection_(section){
     return q.required && !normText(surveyValues_()[q.field]);
   });
 }
+function syncSurveyDraftFromDom_(scope){
+  if(!scope || !scope.querySelectorAll) return;
+  var changed = false;
+  [].forEach.call(scope.querySelectorAll('[data-field]'), function(el){
+    var field = el && el.dataset ? el.dataset.field : '';
+    if(!field) return;
+    var value = el.value == null ? '' : String(el.value);
+    if(state.surveyDraft[field] !== value){
+      state.surveyDraft[field] = value;
+      changed = true;
+    }
+  });
+  if(changed) saveSurveyDraft_();
+}
 function surveyProgress_(){
   const sections = surveySections_();
   const total = sections.length || 1;
@@ -1523,6 +1537,7 @@ function renderConfig(view){
 function renderEditions(view){
   view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando...</div></div>';
   return call('listEditions',state.sessionToken).then(function(rows){
+    rows = Array.isArray(rows) ? rows : [];
     view.innerHTML=
       '<div class="grid cols-2">'+
         '<div class="card">'+
@@ -1542,7 +1557,7 @@ function renderEditions(view){
           '<div class="table-wrap">'+
             '<table>'+
               '<thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Inicio</th><th>Fin</th></tr></thead>'+
-              '<tbody>'+rows.map(function(r){
+              '<tbody>'+(rows.length ? rows.map(function(r){
                 return '<tr>'+
                   '<td><strong>'+esc(r.edition_id)+'</strong></td>'+
                   '<td>'+esc(r.edition_name)+'</td>'+
@@ -1550,7 +1565,7 @@ function renderEditions(view){
                   '<td>'+esc(r.start_date)+'</td>'+
                   '<td>'+esc(r.end_date)+'</td>'+
                 '</tr>';
-              }).join('')+'</tbody>'+
+              }).join('') : '<tr><td colspan="5" class="muted">No hay ediciones registradas.</td></tr>')+'</tbody>'+
             '</table>'+
           '</div>'+
         '</div>'+
@@ -1728,6 +1743,7 @@ function renderSurveyV2(view, previewMode){
     }).join('');
     [].forEach.call(stepsHost.querySelectorAll('[data-step]'), function(btn){
       btn.onclick = function(){
+        syncSurveyDraftFromDom_(host);
         const target = Number(this.dataset.step);
         if(target > state.surveySectionIndex && surveyMissingForSection_(sections[state.surveySectionIndex]).length){
           toast('Complete los obligatorios del bloque actual antes de avanzar.','error');
@@ -1780,7 +1796,9 @@ function renderSurveyV2(view, previewMode){
 
     document.getElementById('btnNextSurvey').onclick = function(){
       const self = this;
-      const missing = surveyMissingForSection_(sec);
+      syncSurveyDraftFromDom_(host);
+      const currentSection = sections[state.surveySectionIndex] || sec;
+      const missing = surveyMissingForSection_(currentSection);
       if(missing.length){
         toast('Faltan campos obligatorios en este bloque: '+missing.map(function(q){ return q.label; }).join(', '),'error',4500);
         return;
