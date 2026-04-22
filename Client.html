@@ -333,6 +333,7 @@ function surveyMissingForSection_(section){
 }
 function syncSurveyDraftFromDom_(scope){
   if(!scope || !scope.querySelectorAll) return;
+  if(!state.surveyDraft || typeof state.surveyDraft !== 'object') state.surveyDraft = {};
   var changed = false;
   [].forEach.call(scope.querySelectorAll('[data-field]'), function(el){
     var field = el && el.dataset ? el.dataset.field : '';
@@ -1611,7 +1612,22 @@ function loadSurveySchema(view, forcePreviewMode){
   });
 }
 
-function renderSurvey(){
+// renderSurvey() — entry point used by the sidebar tab and by window.nav.
+// When the user is logged in (sessionToken exists) it loads the schema and
+// renders the V2 sectioned preview.  When accessed via a public survey token
+// it falls through to the original flat form.
+function renderSurvey(view) {
+  // Admin/viewer context: use the V2 stepper
+  if (state.sessionToken) {
+    var mount = view || document.getElementById('view') || app;
+    state.surveySectionIndex = 0;
+    state.surveyDraft = (state.surveyDraft && typeof state.surveyDraft === 'object') ? state.surveyDraft : {};
+    renderSurveyLoading(mount);
+    loadSurveySchema(mount, true /* preview mode */);
+    return;
+  }
+  // Public token context: original flat form (legacy)
+
   const draftKey='encuesta_colab_draft_'+state.token;
   const draft=safeParse(localStorage.getItem(draftKey),{});
   if(!state.surveyStartedAt){
@@ -1682,6 +1698,7 @@ function renderSurveyV2(view, previewMode){
   const isPreview = (typeof previewMode === 'boolean') ? previewMode : (!!state.sessionToken && !state.token);
   const sections = surveySections_();
   state.surveyDraft = safeParse(localStorage.getItem(surveyDraftKey_()), {});
+  if(!state.surveyDraft || typeof state.surveyDraft !== 'object') state.surveyDraft = {};
   if(!state.surveyStartedAt){
     state.surveyStartedAt = localStorage.getItem(surveyStartKey_()) || localStorage.getItem('encuesta_colab_started_at') || new Date().toISOString();
     localStorage.setItem(surveyStartKey_(), state.surveyStartedAt);
@@ -1778,6 +1795,7 @@ function renderSurveyV2(view, previewMode){
     [].forEach.call(host.querySelectorAll('[data-field]'), function(el){
       const field = el.dataset.field;
       const sync = function(){
+        if(!state.surveyDraft || typeof state.surveyDraft !== 'object') state.surveyDraft = {};
         state.surveyDraft[field] = el.value;
         saveSurveyDraft_();
         if(SURVEY_VIS_DEP_FIELDS[field]) renderSurveySection();
