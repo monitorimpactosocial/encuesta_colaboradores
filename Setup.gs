@@ -12,6 +12,7 @@ function fixEverything() {
   syncHeaders_(APP_CFG.SHEETS.USERS, ['username','display_name','role','password_hash','password_temporal','active','must_change_password','notes']);
   syncHeaders_(APP_CFG.SHEETS.QUESTIONNAIRE, ['section_order','section_id','section_label','question_order','field_name','label','input_type','required','options_json','visible_if','contains_pii','include_in_analytics']);
   syncHeaders_(APP_CFG.SHEETS.CATALOGS, ['catalogo','codigo','etiqueta']);
+  syncHeaders_(APP_CFG.SHEETS.RESPONSES, ['es_cargo_directivo']);
   syncHeaders_(APP_CFG.SHEETS.LONG, ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor']);
   syncHeaders_(APP_CFG.SHEETS.INVITATIONS, ['token','edition_id','email','nombre_destinatario','tipo_acceso','estado','url_encuesta','sent_at','opened_at','used_at','notes']);
   syncHeaders_(APP_CFG.SHEETS.AUDIT, ['event_ts','actor','role','action','entity','entity_id','payload_json']);
@@ -38,7 +39,7 @@ function setupBackend(spreadsheetId) {
   syncHeaders_(APP_CFG.SHEETS.RESPONSES, [
     'obs','flag_obs','fecha_realizacion_raw','fecha_encuesta_raw','start_ts','end_ts','submission_ts','duracion_min','edicion',
     'fecha_encuesta','fecha_encuesta_capturada','flag_fecha_capturada_corrigida','tipo_colaborador','area_colaborador_indirecto_raw',
-    'area_colaborador_indirecto','cargo_raw','cargo','nombre_completo_raw','nombre_completo','sexo','cedula_raw','cedula',
+    'area_colaborador_indirecto','cargo_raw','cargo','es_cargo_directivo','nombre_completo_raw','nombre_completo','sexo','cedula_raw','cedula',
     'respondente_id','edad_raw','edad','flag_edad_corregida_signo','flag_edad_fuera_rango','edad_grupo',
     'estado_civil','nivel_educativo',
     'departamento_procedencia_raw','departamento_procedencia','pais_origen_raw','pais_origen','distrito_procedencia_raw',

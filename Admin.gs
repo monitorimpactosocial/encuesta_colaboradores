@@ -19,6 +19,7 @@ var ANALYTIC_MIN_FIELDS_ = [
   'tipo_colaborador',
   'area_colaborador_indirecto',
   'sexo',
+  'es_cargo_directivo',
   'edad',
   'edad_grupo',
   'departamento_residencia',
@@ -71,6 +72,9 @@ function getDashboardSummary(sessionToken, filters) {
   var edadesSum = 0;
   var edadesCount = 0;
   var flagsSum = 0;
+  var directivosTotal = 0;
+  var directivasTotal = 0;
+  var directivosHombresTotal = 0;
 
   var last7 = 0;
   var last30 = 0;
@@ -157,7 +161,10 @@ function getDashboardSummary(sessionToken, filters) {
         critico: 0,
         edadesSum: 0,
         edadesCount: 0,
-        flagsSum: 0
+        flagsSum: 0,
+        directivos: 0,
+        directivas: 0,
+        directivosHombres: 0
       };
     }
     return perEditionAll[ed];
@@ -214,8 +221,20 @@ function getDashboardSummary(sessionToken, filters) {
       incM_(mEmpresa, ed, emp);
     }
 
-    inc_(bySexo, keyOf_(r.sexo));
-    incM_(mSexo, ed, keyOf_(r.sexo));
+    var sexo = keyOf_(r.sexo);
+    inc_(bySexo, sexo);
+    incM_(mSexo, ed, sexo);
+    if (isDirectivoLike_(r.es_cargo_directivo)) {
+      directivosTotal++;
+      edStats.directivos++;
+      if (isFemaleLike_(sexo)) {
+        directivasTotal++;
+        edStats.directivas++;
+      } else if (isMaleLike_(sexo)) {
+        directivosHombresTotal++;
+        edStats.directivosHombres++;
+      }
+    }
     var dept = keyOf_(r.departamento_residencia);
     inc_(byDeptResidencia, dept);
     incM_(mDept, ed, dept);
@@ -316,7 +335,11 @@ function getDashboardSummary(sessionToken, filters) {
       ipsAplicable: st.ipsAplicable,
       edadesSum: st.edadesSum,
       edadesCount: st.edadesCount,
-      flagsSum: st.flagsSum
+      flagsSum: st.flagsSum,
+      directivos: st.directivos,
+      directivas: st.directivas,
+      directivosHombres: st.directivosHombres,
+      directivasPct: st.directivos ? Math.round(st.directivas * 100 / st.directivos) : 0
     };
   }).sort(function(a, b) { return a.edicion.localeCompare(b.edicion); });
 
@@ -345,6 +368,13 @@ function getDashboardSummary(sessionToken, filters) {
     calidadRevisar: calidadRevisar,
     calidadCritico: calidadCritico,
     nFlagsProm: flagsProm,
+    directivo: {
+      total: directivosTotal,
+      mujeres: directivasTotal,
+      hombres: directivosHombresTotal,
+      sinDatoSexo: Math.max(directivosTotal - directivasTotal - directivosHombresTotal, 0),
+      mujeresPct: directivosTotal ? Math.round(directivasTotal * 100 / directivosTotal) : 0
+    },
     last7: last7,
     last30: last30,
     prev30: prev30,
@@ -375,7 +405,8 @@ function getDashboardSummary(sessionToken, filters) {
     }
   };
 
-  cache.put(cacheKey, jsonStringify_(summary), 180);
+  // Cachea por version + filtros. Se invalida al reconstruir analitica.
+  cache.put(cacheKey, jsonStringify_(summary), 600);
   return summary;
 }
 
@@ -395,6 +426,24 @@ function isYesLike_(value) {
   if (low === 'si' || low === 'sí' || low === 'sÃ­' || low === 'yes' || low === 'true' || low === '1') return true;
   var key = upperKey_(v).replace(/[^A-Z0-9]/g, '');
   return key === 'SI' || key === 'YES' || key === 'TRUE' || key === '1';
+}
+
+function isDirectivoLike_(value) {
+  var v = normalizeText_(value);
+  if (!v) return false;
+  if (isYesLike_(v)) return true;
+  var key = upperKey_(v).replace(/[^A-Z0-9]/g, '');
+  return key === 'DIRECTIVO' || key === 'DIRECTIVA' || key === 'CARGODIRECTIVO';
+}
+
+function isFemaleLike_(value) {
+  var key = upperKey_(value).replace(/[^A-Z0-9]/g, '');
+  return key === 'F' || key === 'MUJER' || key === 'FEMENINO' || key === 'FEMALE';
+}
+
+function isMaleLike_(value) {
+  var key = upperKey_(value).replace(/[^A-Z0-9]/g, '');
+  return key === 'M' || key === 'HOMBRE' || key === 'MASCULINO' || key === 'MALE';
 }
 
 function getDashboardCacheVersion_() {
@@ -423,13 +472,15 @@ function sortGrupoEdad_(items) {
 function listResponses(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
   limit = Number(limit || 200);
-  var rows = getCombinedAnalyticRows_(null); // Pass null to get all fields
+  limit = Math.min(Math.max(limit, 1), 2000);
+  // Lee solo la cola reciente desde BASE_ANALITICA (evita escanear todo el historico).
+  var rows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, limit, null);
   rows.sort(function(a,b){
     var vA = a.submission_ts || '';
     var vB = b.submission_ts || '';
     return vA > vB ? -1 : (vA < vB ? 1 : 0);
   });
-  return rows.slice(0, limit);
+  return rows;
 }
 
 function getAnalyticHeaders_() {
@@ -744,7 +795,7 @@ function buildSnapshotCsv(sessionToken, editionId) {
   if (!rows.length) return '';
 
   var fields = [
-    'submission_ts','edicion','fecha_encuesta','tipo_colaborador','sexo','edad','edad_grupo',
+    'submission_ts','edicion','fecha_encuesta','tipo_colaborador','sexo','es_cargo_directivo','edad','edad_grupo',
     'departamento_residencia','descuento_ips_actual','salario_actual_banda',
     'empresa_contratista','estado_calidad','n_flags','respondente_id','source_uuid'
   ];

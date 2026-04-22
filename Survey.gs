@@ -179,6 +179,7 @@ function buildResponseRow_(payload, invitation) {
     area_colaborador_indirecto: canonicalArea_(payload.area_colaborador_indirecto),
     cargo_raw: normalizeText_(payload.cargo),
     cargo: properCase_(payload.cargo),
+    es_cargo_directivo: canonicalYesNo_(payload.es_cargo_directivo),
     nombre_completo_raw: normalizeText_(payload.nombre_completo),
     nombre_completo: properCase_(payload.nombre_completo),
     sexo: canonicalSexo_(payload.sexo),
