@@ -498,6 +498,14 @@ function loadBootstrap(){
       state.summaryCache={};
       state.responsesData=null;
       renderPanel();
+      // Prefetch en segundo plano: dashboard y respuestas listas antes de que el usuario haga clic
+      state.dashFilters = state.dashFilters || {};
+      call('getDashboardSummary', state.sessionToken, state.dashFilters).then(function(d){
+        state.summaryCache[JSON.stringify(state.dashFilters)] = d;
+      }).catch(function(){});
+      call('listResponses', state.sessionToken, 500).then(function(r){
+        state.responsesData = Array.isArray(r) ? r : [];
+      }).catch(function(){});
     }
   }).catch(function(err){ clearSession(); renderLogin(err.message||'Sesión expirada.'); });
 }

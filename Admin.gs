@@ -422,7 +422,8 @@ function getDashboardSummary(sessionToken, filters) {
   };
 
   // Cachea por version + filtros. Se invalida al reconstruir analitica.
-  cache.put(cacheKey, jsonStringify_(summary), 600);
+  // TTL largo: datos históricos casi no cambian; se invalida con bumpDashboardCacheVersion_
+  cache.put(cacheKey, jsonStringify_(summary), 21600);
   return summary;
 }
 
@@ -505,16 +506,23 @@ function listResponses(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
   limit = Number(limit || 500);
   limit = Math.min(Math.max(limit, 1), 5000);
+
+  var cache = CacheService.getScriptCache();
+  var cKey  = 'list_resp_' + getDashboardCacheVersion_() + '_' + limit;
+  var hit   = cache.get(cKey);
+  if (hit) return jsonParse_(hit, []);
+
   var rows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, limit, null);
-  // Fallback: si BASE_ANALITICA está vacía, usar snapshot + ANALYTIC_MIN_FIELDS_
-  if (!rows.length) {
-    rows = getCombinedAnalyticRows_();
-  }
+  if (!rows.length) rows = getCombinedAnalyticRows_();
+
   rows.sort(function(a,b){
     var vA = a.submission_ts || a.fecha_encuesta || '';
     var vB = b.submission_ts || b.fecha_encuesta || '';
     return vA > vB ? -1 : (vA < vB ? 1 : 0);
   });
+
+  // Cache 10 min (más corto que dashboard por si hay nuevas respuestas)
+  try { cache.put(cKey, JSON.stringify(rows), 600); } catch(e) {}
   return rows;
 }
 
@@ -565,27 +573,24 @@ function appendResponsesToAnalytics_(responseRows) {
  */
 function getCombinedAnalyticRows_(fieldsReq) {
   var fields = fieldsReq !== undefined ? fieldsReq : ANALYTIC_MIN_FIELDS_;
-  var liveRows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, fields);
-  if (liveRows.length) return liveRows;
-  return getEmbeddedSnapshotRows_(fields);
+  var cache  = CacheService.getScriptCache();
+  var rowKey = 'analytic_rows_' + getDashboardCacheVersion_();
 
-  function addRow(r) {
-    var key = normalizeText_(r.source_uuid);
-    if (!key) key = [
-      normalizeText_(r.edicion),
-      normalizeText_(r.respondente_id),
-      normalizeText_(r.fecha_encuesta)
-    ].join('|');
-    if (!key) key = 'row_' + String(out.length + 1);
-    if (seen[key]) return;
-    seen[key] = true;
-    out.push(r);
+  // 1) Try row-level chunked cache (avoids re-parsing the 477KB snapshot CSV)
+  var allRows = getChunked_(cache, rowKey);
+  if (!allRows) {
+    var liveRows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, null);
+    allRows = liveRows.length ? liveRows : getEmbeddedSnapshotRows_(null);
+    if (allRows.length) putChunked_(cache, rowKey, allRows, 21600);
   }
 
-  // Prefiere filas live si hay overlap con snapshot (más campos / más actual).
-  liveRows.forEach(addRow);
-  snapRows.forEach(addRow);
-  return out;
+  // 2) Filter to requested fields (in-memory, fast)
+  if (!fields || !fields.length) return allRows;
+  return allRows.map(function(r) {
+    var obj = {};
+    fields.forEach(function(f) { obj[f] = r[f] !== undefined ? r[f] : ''; });
+    return obj;
+  });
 }
 
 function getLiveTailLimit_() {

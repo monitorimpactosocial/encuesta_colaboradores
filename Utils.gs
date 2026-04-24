@@ -150,6 +150,44 @@ function syncHeaders_(sheetName, headers) {
   return current;
 }
 
+/* ── Chunked CacheService helpers ───────────────────────
+   CacheService limit: 100 KB per entry. For larger payloads we split the
+   JSON into 90 KB slices, store them as key_0…key_N, plus key_n = count.
+   TTL is set identically on all chunks so they expire together.
+────────────────────────────────────────────────────────── */
+var CHUNK_SIZE_ = 90000;
+
+function putChunked_(cache, key, value, ttl) {
+  try {
+    var json = JSON.stringify(value);
+    var n = Math.ceil(json.length / CHUNK_SIZE_);
+    var items = {};
+    items[key + '__n'] = String(n);
+    for (var i = 0; i < n; i++) {
+      items[key + '__' + i] = json.slice(i * CHUNK_SIZE_, (i + 1) * CHUNK_SIZE_);
+    }
+    cache.putAll(items, ttl);
+  } catch (e) { /* silent – cache write failure is not fatal */ }
+}
+
+function getChunked_(cache, key) {
+  try {
+    var nStr = cache.get(key + '__n');
+    if (!nStr) return null;
+    var n = Number(nStr);
+    var keys = [key + '__n'];
+    for (var i = 0; i < n; i++) keys.push(key + '__' + i);
+    var items = cache.getAll(keys);
+    var parts = [];
+    for (var j = 0; j < n; j++) {
+      var part = items[key + '__' + j];
+      if (!part) return null;
+      parts.push(part);
+    }
+    return JSON.parse(parts.join(''));
+  } catch (e) { return null; }
+}
+
 function auditLog_(actor, role, action, entity, entityId, payload) {
   try {
     appendObjectRow_(APP_CFG.SHEETS.AUDIT, {
