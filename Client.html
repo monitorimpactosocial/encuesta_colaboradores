@@ -16,7 +16,7 @@ const state = {
   surveySectionIndex: 0,
   activeTab: 'dashboard',
   responsesData: null,
-  responsesFilter: {search:'', tipo:'', calidad:''},
+  responsesFilter: {search:'', tipo:'', calidad:'', sexo:'', edadGrupo:'', deptResidencia:'', grupoCargo:'', empresa:'', edicion:''},
   responsesSort: {col:'', dir:1},
   responsesPage: 1,
   responsesPageSize: 50,
@@ -529,7 +529,7 @@ function renderPanel(){
         '<div class="header-right">'+
           '<div class="edition-pill" title="Edición activa">'+esc(b.activeEdition)+'</div>'+
           '<span class="badge" style="margin-right:8px; border:none; background:var(--primary); color:white;">'+esc(b.user.role)+'</span>'+
-          (b.user.role==='admin'?'<button class="btn btn-ghost" id="btnRebuild" title="Reconstruir BASE_ANALITICA desde RESPUESTAS y limpiar caché del dashboard" style="font-size:12px;">↻ Recalcular datos</button>':'')+
+          '<button class="btn btn-ghost" id="btnRebuild" title="Reconstruir BASE_ANALITICA desde RESPUESTAS y limpiar caché del dashboard" style="font-size:12px;">↻ Recalcular datos</button>'+
           '<button class="btn btn-ghost" id="btnLogout" style="color:var(--danger);">Salir</button>'+
         '</div>'+
       '</header>'+
@@ -1157,11 +1157,17 @@ function renderResponses(view){
 
     function applyFilters(r){
       const f=state.responsesFilter;
-      if(f.tipo && r.tipo_colaborador!==f.tipo) return false;
-      if(f.calidad && r.estado_calidad!==f.calidad) return false;
+      if(f.tipo        && r.tipo_colaborador!==f.tipo)                     return false;
+      if(f.calidad     && r.estado_calidad!==f.calidad)                    return false;
+      if(f.sexo        && normalizeKey_(r.sexo)!==normalizeKey_(f.sexo))   return false;
+      if(f.edadGrupo   && r.edad_grupo!==f.edadGrupo)                      return false;
+      if(f.deptResidencia && normalizeKey_(r.departamento_residencia)!==normalizeKey_(f.deptResidencia)) return false;
+      if(f.grupoCargo  && normalizeKey_(r.grupo_cargo)!==normalizeKey_(f.grupoCargo)) return false;
+      if(f.empresa     && normalizeKey_(r.empresa_contratista)!==normalizeKey_(f.empresa)) return false;
+      if(f.edicion     && normalizeKey_(r.edicion)!==normalizeKey_(f.edicion)) return false;
       if(f.search){
         const q=normalizeKey_(f.search);
-        return cols.some(function(c){ return normalizeKey_(r[c.k]).indexOf(q)>-1; });
+        return cols.some(function(c){ return normalizeKey_(String(r[c.k]||'')).indexOf(q)>-1; });
       }
       return true;
     }
@@ -1184,7 +1190,7 @@ function renderResponses(view){
     function getRows(){
       const sc = state.responsesSort;
       const f = state.responsesFilter || {};
-      const key = [rows.length, f.search||'', f.tipo||'', f.calidad||'', sc.col||'', sc.dir||1].join('|');
+      const key = [rows.length, f.search||'', f.tipo||'', f.calidad||'', f.sexo||'', f.edadGrupo||'', f.deptResidencia||'', f.grupoCargo||'', f.empresa||'', f.edicion||'', sc.col||'', sc.dir||1].join('|');
       if(key === rowsCacheKey) return rowsCacheValue;
       rowsCacheValue = applySort(rows.filter(applyFilters));
       rowsCacheKey = key;
@@ -1251,38 +1257,56 @@ function renderResponses(view){
       if(nextBtn) nextBtn.disabled = state.responsesPage >= totalPages;
     }
 
-    const tipos=[...new Set(rows.map(function(r){return r.tipo_colaborador;}).filter(Boolean))];
-    const calidades=[...new Set(rows.map(function(r){return r.estado_calidad;}).filter(Boolean))];
+    function uniq_(arr){ var s={}; return arr.filter(function(v){ if(!v||s[v]) return false; s[v]=1; return true; }).sort(); }
+    const tipos       = uniq_(rows.map(function(r){return r.tipo_colaborador;}));
+    const calidades   = uniq_(rows.map(function(r){return r.estado_calidad;}));
+    const sexos       = uniq_(rows.map(function(r){return r.sexo;}));
+    const edadGrupos  = ['18-24','25-34','35-44','45-54','55-64','65+'].filter(function(g){ return rows.some(function(r){return r.edad_grupo===g;}); });
+    const deptos      = uniq_(rows.map(function(r){return r.departamento_residencia;})).slice(0,25);
+    const grupoCargos = uniq_(rows.map(function(r){return r.grupo_cargo;}));
+    const empresas    = (function(){ var cnt={}; rows.forEach(function(r){ var e=r.empresa_contratista; if(e) cnt[e]=(cnt[e]||0)+1; }); return Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];}).slice(0,20); })();
+    const ediciones   = uniq_(rows.map(function(r){return r.edicion;}));
 
+    function sel_(id, label, opts, cur){
+      return '<select class="select filter-sel" id="'+id+'">'+
+        '<option value="">'+label+'</option>'+
+        opts.map(function(v){ return '<option value="'+esc(v)+'"'+(cur===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+
+      '</select>';
+    }
+
+    const f = state.responsesFilter;
     view.innerHTML=
       '<div class="card">'+
-        '<div class="spread" style="margin-bottom:14px">'+
+        '<div class="spread" style="margin-bottom:10px">'+
           '<div>'+
-            '<h3 style="margin-bottom:4px">Base analitica v4 - vista anonimizada</h3>'+
-            '<p class="muted" style="font-size:12px">Paginacion inteligente, filtros rapidos y exportacion por vista.</p>'+
+            '<h3 style="margin-bottom:2px">Base analítica — vista anonimizada</h3>'+
+            '<p class="muted" style="font-size:12px">'+rows.length+' registros · filtros múltiples · exportación CSV</p>'+
           '</div>'+
           '<div class="row">'+
-            '<span class="badge info" id="respCount">'+rows.length+' filas</span>'+
-            '<button class="btn btn-secondary" id="btnExportRespPage">⬇ Exportar pagina</button>'+
-            '<button class="btn btn-secondary" id="btnExportResp">⬇ Exportar filtrado</button>'+
-            '<button class="btn btn-ghost" id="btnRefreshResp">↻ Recargar</button>'+
+            '<span class="badge info" id="respCount">'+rows.length+'</span>'+
+            '<button class="btn btn-secondary" id="btnExportRespPage">⬇ Pág.</button>'+
+            '<button class="btn btn-secondary" id="btnExportResp">⬇ Filtrado</button>'+
+            '<button class="btn btn-ghost" id="btnRefreshResp">↻</button>'+
           '</div>'+
         '</div>'+
-        '<div class="row" id="respStatsQuick" style="margin-bottom:12px; gap:8px;"></div>'+
-        '<div class="filter-row response-filter-row">'+
-          '<input class="input search-input" id="respSearch" placeholder="Buscar en todos los campos..." value="'+esc(state.responsesFilter.search)+'">'+
-          '<select class="select filter-sel" id="respTipo">'+
-            '<option value="">Todos los tipos</option>'+
-            tipos.map(function(t){return '<option value="'+esc(t)+'"'+(state.responsesFilter.tipo===t?' selected':'')+'>'+esc(t)+'</option>';}).join('')+
-          '</select>'+
-          '<select class="select filter-sel" id="respCalidad">'+
-            '<option value="">Toda calidad</option>'+
-            calidades.map(function(c){return '<option value="'+esc(c)+'"'+(state.responsesFilter.calidad===c?' selected':'')+'>'+esc(c)+'</option>';}).join('')+
-          '</select>'+
+        '<div class="row" id="respStatsQuick" style="margin-bottom:10px; gap:6px; flex-wrap:wrap;"></div>'+
+
+        '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; align-items:center;">'+
+          '<input class="input search-input" id="respSearch" placeholder="Buscar en todos los campos..." style="flex:1; min-width:180px;" value="'+esc(f.search)+'">'+
+          sel_('respEdicion',  'Todas las ediciones', ediciones,   f.edicion)+
+          sel_('respTipo',     'Todos los tipos',     tipos,       f.tipo)+
+          sel_('respSexo',     'Todos los sexos',     sexos,       f.sexo)+
+          sel_('respEdadGrupo','Todos los tramos',    edadGrupos,  f.edadGrupo)+
+        '</div>'+
+        '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; align-items:center;">'+
+          sel_('respGrupoCargo','Todas las categorías',  grupoCargos, f.grupoCargo)+
+          sel_('respDepto',    'Todos los dptos.',    deptos,      f.deptResidencia)+
+          sel_('respEmpresa',  'Todas las empresas',  empresas,    f.empresa)+
+          sel_('respCalidad',  'Toda calidad',        calidades,   f.calidad)+
           '<select class="select filter-sel" id="respPageSize">'+
-            PAGE_SIZES.map(function(sz){ return '<option value="'+sz+'"'+(state.responsesPageSize===sz?' selected':'')+'>'+sz+' por pagina</option>'; }).join('')+
+            PAGE_SIZES.map(function(sz){ return '<option value="'+sz+'"'+(state.responsesPageSize===sz?' selected':'')+'>'+sz+' / pág.</option>'; }).join('')+
           '</select>'+
-          '<button class="btn btn-ghost" id="btnClearFilter">Limpiar</button>'+
+          '<button class="btn btn-ghost" id="btnClearFilter">Limpiar filtros</button>'+
         '</div>'+
         '<div class="table-wrap">'+
           '<table class="table" id="respTable">'+
@@ -1309,27 +1333,34 @@ function renderResponses(view){
       state.responsesPage = 1;
       renderTable();
     }, 160));
-    document.getElementById('respTipo').onchange=function(e){
-      state.responsesFilter.tipo=e.target.value;
-      state.responsesPage = 1;
-      renderTable();
-    };
-    document.getElementById('respCalidad').onchange=function(e){
-      state.responsesFilter.calidad=e.target.value;
-      state.responsesPage = 1;
-      renderTable();
-    };
+    var filterMap_ = [
+      ['respTipo',      'tipo'],
+      ['respCalidad',   'calidad'],
+      ['respSexo',      'sexo'],
+      ['respEdadGrupo', 'edadGrupo'],
+      ['respDepto',     'deptResidencia'],
+      ['respGrupoCargo','grupoCargo'],
+      ['respEmpresa',   'empresa'],
+      ['respEdicion',   'edicion']
+    ];
+    filterMap_.forEach(function(pair){
+      var el = document.getElementById(pair[0]);
+      if(el) el.onchange = function(e){
+        state.responsesFilter[pair[1]] = e.target.value;
+        state.responsesPage = 1;
+        renderTable();
+      };
+    });
     document.getElementById('respPageSize').onchange=function(e){
       state.responsesPageSize = Number(e.target.value) || 50;
       state.responsesPage = 1;
       renderTable();
     };
     document.getElementById('btnClearFilter').onclick=function(){
-      state.responsesFilter={search:'',tipo:'',calidad:''};
+      state.responsesFilter={search:'',tipo:'',calidad:'',sexo:'',edadGrupo:'',deptResidencia:'',grupoCargo:'',empresa:'',edicion:''};
       state.responsesPage = 1;
       document.getElementById('respSearch').value='';
-      document.getElementById('respTipo').value='';
-      document.getElementById('respCalidad').value='';
+      filterMap_.forEach(function(pair){ var el=document.getElementById(pair[0]); if(el) el.value=''; });
       document.getElementById('respPageSize').value=String(state.responsesPageSize);
       renderTable();
     };

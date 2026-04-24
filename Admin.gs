@@ -503,13 +503,16 @@ function computeGrupoCargo_(cargo) {
 
 function listResponses(sessionToken, limit) {
   requireRole_(sessionToken, ['admin','viewer']);
-  limit = Number(limit || 200);
-  limit = Math.min(Math.max(limit, 1), 2000);
-  // Lee solo la cola reciente desde BASE_ANALITICA (evita escanear todo el historico).
+  limit = Number(limit || 500);
+  limit = Math.min(Math.max(limit, 1), 5000);
   var rows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, limit, null);
+  // Fallback: si BASE_ANALITICA está vacía, usar snapshot + ANALYTIC_MIN_FIELDS_
+  if (!rows.length) {
+    rows = getCombinedAnalyticRows_();
+  }
   rows.sort(function(a,b){
-    var vA = a.submission_ts || '';
-    var vB = b.submission_ts || '';
+    var vA = a.submission_ts || a.fecha_encuesta || '';
+    var vB = b.submission_ts || b.fecha_encuesta || '';
     return vA > vB ? -1 : (vA < vB ? 1 : 0);
   });
   return rows;
