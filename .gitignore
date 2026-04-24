@@ -2,9 +2,17 @@
 .clasprc.json
 .clasp.json
 
-# Archivos de datos pesados
+# Archivos de datos pesados y volcados
 *.xlsx
-ENCUESTA_COLABORADORES_LIMPIA_2025.csv
+*.csv
+*.zip
+*.gsheet
+
+# Insumos locales y carpetas de proceso Python
+2024encuesta/
+data/
+__pycache__/
+*.py
 
 # OS
 .DS_Store
@@ -13,3 +21,7 @@ Thumbs.db
 # Editor
 .vscode/
 *.swp
+*.code-workspace
+
+# Archivos intermedios generados
+seed_nomina_data.js

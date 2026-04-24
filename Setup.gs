@@ -14,9 +14,10 @@ function fixEverything() {
   syncHeaders_(APP_CFG.SHEETS.CATALOGS, ['catalogo','codigo','etiqueta']);
   syncHeaders_(APP_CFG.SHEETS.RESPONSES, ['es_cargo_directivo']);
   syncHeaders_(APP_CFG.SHEETS.LONG, ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor']);
-  syncHeaders_(APP_CFG.SHEETS.INVITATIONS, ['token','edition_id','email','nombre_destinatario','tipo_acceso','estado','url_encuesta','sent_at','opened_at','used_at','notes']);
+  syncHeaders_(APP_CFG.SHEETS.INVITATIONS, ['token','edition_id','email','nombre_destinatario','cedula','tipo_acceso','estado','url_encuesta','sent_at','opened_at','used_at','notes']);
   syncHeaders_(APP_CFG.SHEETS.AUDIT, ['event_ts','actor','role','action','entity','entity_id','payload_json']);
-  
+  syncHeaders_(APP_CFG.SHEETS.NOMINA, ['cedula','apellidos','nombres','nombre_completo','genero','cargo','area','email','fecha_ingreso','edicion']);
+
   // Create BASE_ANALITICA safely
   var ss = getBackendSpreadsheet_();
   var shA = ss.getSheetByName(APP_CFG.SHEETS.ANALYTIC) || ss.insertSheet(APP_CFG.SHEETS.ANALYTIC);
@@ -56,8 +57,9 @@ function setupBackend(spreadsheetId) {
   ]);
   ensureHeaders_(APP_CFG.SHEETS.ANALYTIC, []);
   syncHeaders_(APP_CFG.SHEETS.LONG, ['edicion','fecha_encuesta','respondente_id','source_uuid','campo','valor']);
-  syncHeaders_(APP_CFG.SHEETS.INVITATIONS, ['token','edition_id','email','nombre_destinatario','tipo_acceso','estado','url_encuesta','sent_at','opened_at','used_at','notes']);
+  syncHeaders_(APP_CFG.SHEETS.INVITATIONS, ['token','edition_id','email','nombre_destinatario','cedula','tipo_acceso','estado','url_encuesta','sent_at','opened_at','used_at','notes']);
   syncHeaders_(APP_CFG.SHEETS.AUDIT, ['event_ts','actor','role','action','entity','entity_id','payload_json']);
+  syncHeaders_(APP_CFG.SHEETS.NOMINA, ['cedula','apellidos','nombres','nombre_completo','genero','cargo','area','email','fecha_ingreso','edicion']);
 
   hashSeedUsers_();
   rebuildAnalytics();

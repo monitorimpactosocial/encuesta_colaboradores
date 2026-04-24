@@ -20,7 +20,8 @@ const state = {
   responsesSort: {col:'', dir:1},
   responsesPage: 1,
   responsesPageSize: 50,
-  dashboardRenderStamp: ''
+  dashboardRenderStamp: '',
+  allDashRows: null
 };
 const CHARTS = {};
 const app = document.getElementById('app');
@@ -119,6 +120,7 @@ function copyText(text){
 window._copyInv = copyText;
 
 /* ── Chart helpers ─────────────────────────────────── */
+if(typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
 function destroyChart(id){ if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];} }
 function total(arr){ return (arr||[]).reduce(function(s,x){return s+n(x.value);},0); }
 
@@ -140,7 +142,16 @@ function donut(id, items, colors){
         tooltip:{callbacks:{label:function(ctx){
           const pct=tot?Math.round(n(ctx.raw)/tot*100):0;
           return ' '+ctx.label+': '+ctx.raw+' ('+pct+'%)';
-        }}}
+        }}},
+        datalabels:{
+          color:'#fff',
+          font:{size:11,weight:'bold'},
+          anchor:'center',align:'center',
+          formatter:function(value){
+            const pct=tot?Math.round(value/tot*100):0;
+            return pct>=5?pct+'%':'';
+          }
+        }
       }
     }
   });
@@ -151,6 +162,7 @@ function hbar(id, items, colorFn, opts){
   const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return;
   const labels=items.map(function(x){return x.label;});
   const data=items.map(function(x){return n(x.value);});
+  const tot=data.reduce(function(a,b){return a+b;},0);
   CHARTS[id]=new Chart(el,{
     type:'bar',
     data:{
@@ -164,12 +176,23 @@ function hbar(id, items, colorFn, opts){
     options:{
       maintainAspectRatio: false,
       indexAxis:'y',
+      layout:{padding:{right:75}},
       plugins:{
         legend:{display:false},
         tooltip:{callbacks:{label:function(ctx){
-          const pct=total(items)?Math.round(n(ctx.raw)/total(items)*100):0;
+          const pct=tot?Math.round(n(ctx.raw)/tot*100):0;
           return ' '+ctx.raw+' ('+pct+'%)';
-        }}}
+        }}},
+        datalabels:{
+          color:'#0f2027',
+          anchor:'end',align:'right',offset:4,
+          font:{size:10,weight:'600'},
+          formatter:function(value){
+            if(!value) return '';
+            const pct=tot?Math.round(value/tot*100):0;
+            return value+' ('+pct+'%)';
+          }
+        }
       },
       scales:{
         x:{grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'},max:opts&&opts.max?opts.max:undefined},
@@ -190,7 +213,16 @@ function vbar(id, items, colors){
     },
     options:{
       maintainAspectRatio: false,
-      plugins:{legend:{display:false}},
+      layout:{padding:{top:20}},
+      plugins:{
+        legend:{display:false},
+        datalabels:{
+          color:'#0f2027',
+          anchor:'end',align:'top',offset:2,
+          font:{size:10,weight:'600'},
+          formatter:function(value){ return value||''; }
+        }
+      },
       scales:{
         x:{grid:{display:false},ticks:{font:{size:12},color:'#0f2027'}},
         y:{grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'}}
@@ -218,7 +250,16 @@ function lineChart(id, labels, data, color){
     },
     options:{
       maintainAspectRatio: false,
-      plugins:{legend:{display:false}},
+      layout:{padding:{top:18}},
+      plugins:{
+        legend:{display:false},
+        datalabels:{
+          color:'#0f2027',
+          anchor:'end',align:'top',offset:2,
+          font:{size:10,weight:'600'},
+          formatter:function(value){ return value||''; }
+        }
+      },
       scales:{
         x:{grid:{display:false},ticks:{font:{size:11},color:'#5a7580'}},
         y:{grid:{color:'#edf5f3'},ticks:{font:{size:10},color:'#5a7580'},beginAtZero:true}
@@ -237,7 +278,14 @@ function stackedBar(id, labels, datasets, opts){
       maintainAspectRatio: false,
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
-        tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}}
+        tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}},
+        datalabels:{
+          color:'#fff',
+          anchor:'center',align:'center',
+          font:{size:9,weight:'600'},
+          display:function(ctx){ return (ctx.dataset.data[ctx.dataIndex]||0)>0; },
+          formatter:function(value){ return value||''; }
+        }
       },
       scales:{
         x:{stacked:true,grid:{display:false},ticks:{font:{size:11},color:'#0f2027'}},
@@ -256,9 +304,17 @@ function multiBar(id, labels, datasets, opts){
     options:{
       maintainAspectRatio: false,
       indexAxis: opts&&opts.horizontal ? 'y' : 'x',
+      layout:{padding:{top:18}},
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11},color:'#5a7580'}},
-        tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}}
+        tooltip:{callbacks:{label:function(ctx){ return ' '+ctx.dataset.label+': '+ctx.raw; }}},
+        datalabels:{
+          color:'#fff',
+          anchor:'center',align:'center',
+          font:{size:10,weight:'600'},
+          display:function(ctx){ return (ctx.dataset.data[ctx.dataIndex]||0)>0; },
+          formatter:function(value){ return value||''; }
+        }
       },
       scales:{
         x:{grid:{display:!(opts&&opts.horizontal)},ticks:{font:{size:11},color:'#0f2027'},beginAtZero:true},
@@ -295,6 +351,10 @@ const SURVEY_VIS_DEP_FIELDS = {
   combustible_cocina:1,
   trabajaba_antes_paracel:1,
   empresa_contratista:1
+};
+const SURVEY_PREFILL_FIELDS_ = {
+  tipo_colaborador:1, nombre_completo:1, sexo:1,
+  cargo:1, area_paracel:1, antiguedad_empresa_banda:1
 };
 
 function surveyContextKey_(){
@@ -377,7 +437,9 @@ function renderSurveyQuestion_(q){
   const meta = surveyFieldMeta_(q.field);
   const val = surveyValues_()[q.field] || '';
   const req = q.required ? ' <span class="req">*</span>' : '';
-  const wrapCls = 'survey-field' + (meta.full ? ' full' : '');
+  const isPrefilled = !!(SURVEY_PREFILL_FIELDS_[q.field] && val && state._prefillApplied);
+  const wrapCls = 'survey-field' + (meta.full ? ' full' : '') + (isPrefilled ? ' survey-prefilled' : '');
+  const prefillBadge = isPrefilled ? '<span class="survey-prefill-badge" title="Dato precargado del registro de personal">&#128274; Precargado</span>' : '';
   const attr = [
     'data-field="'+esc(q.field)+'"',
     meta.placeholder ? 'placeholder="'+esc(meta.placeholder)+'"' : '',
@@ -397,7 +459,7 @@ function renderSurveyQuestion_(q){
   }else{
     input = '<input class="input" value="'+esc(val)+'" '+attr+'>';
   }
-  return '<div class="'+wrapCls+'" data-visible-if="'+esc(q.visibleIf||'')+'"><label class="label">'+esc(q.label)+req+'</label>'+input+'</div>';
+  return '<div class="'+wrapCls+'" data-visible-if="'+esc(q.visibleIf||'')+'"><label class="label">'+esc(q.label)+req+prefillBadge+'</label>'+input+'</div>';
 }
 
 /* ── Init ──────────────────────────────────────────── */
@@ -496,13 +558,26 @@ function loadBootstrap(){
     } else {
       state.statsCacheByEdition={};
       state.summaryCache={};
+      state.allDashRows=null;
       state.responsesData=null;
       renderPanel();
-      // Prefetch en segundo plano: dashboard y respuestas listas antes de que el usuario haga clic
+      // Prefetch filas brutas para filtrado instantáneo (prioridad más alta)
       state.dashFilters = state.dashFilters || {};
-      call('getDashboardSummary', state.sessionToken, state.dashFilters).then(function(d){
-        state.summaryCache[JSON.stringify(state.dashFilters)] = d;
-      }).catch(function(){});
+      call('getAnalyticRowsForDashboard', state.sessionToken).then(function(rows){
+        if(Array.isArray(rows) && rows.length){
+          state.allDashRows = rows;
+          // Si el tablero ya está visible, forzar re-render para activar modo instantáneo
+          if(state.activeTab === 'dashboard'){
+            var v = document.getElementById('view');
+            if(v) renderDashboard(v);
+          }
+        }
+      }).catch(function(){
+        // Fallback: prefetch clásico del summary
+        call('getDashboardSummary', state.sessionToken, state.dashFilters).then(function(d){
+          state.summaryCache[JSON.stringify(state.dashFilters)] = d;
+        }).catch(function(){});
+      });
       call('listResponses', state.sessionToken, 500).then(function(r){
         state.responsesData = Array.isArray(r) ? r : [];
       }).catch(function(){});
@@ -579,7 +654,7 @@ function renderPanel(){
   if(rb) rb.onclick=function(){
     const self=this;
     btnLoad(self,'↻...');
-    call('rebuildAnalytics').then(function(){
+    call('rebuildAnalytics', state.sessionToken).then(function(){
       state.statsCacheByEdition={};
       state.summaryCache={};
       state.responsesData=null;
@@ -621,22 +696,126 @@ window.nav = function(tabId) {
   renderCurrentTab();
 };
 
+/* ── Dashboard client-side aggregation ─────────────── */
+function isYesLike_j_(v){ var k=normText(v).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); return k==='SI'||k==='YES'||k==='1'||k==='TRUE'; }
+function isDirectivo_j_(v){ if(!v) return false; if(isYesLike_j_(v)) return true; var k=normText(v).toUpperCase().replace(/[^A-Z0-9]/g,''); return k==='DIRECTIVO'||k==='DIRECTIVA'||k==='CARGODIRECTIVO'; }
+function isFemale_j_(v){ var k=normText(v).toUpperCase().replace(/[^A-Z]/g,''); return k==='F'||k==='MUJER'||k==='FEMENINO'||k==='FEMALE'; }
+function isMale_j_(v){ var k=normText(v).toUpperCase().replace(/[^A-Z]/g,''); return k==='M'||k==='HOMBRE'||k==='MASCULINO'||k==='MALE'; }
+function classifyCalidad_j_(cq){ var t=normText(cq).toLowerCase(); if(t==='ok') return 'ok'; if(t.indexOf('crit')>-1) return 'critico'; if(t.indexOf('revis')>-1) return 'revisar'; return t||'sin dato'; }
+function isIpsAplicable_j_(ip){ var t=normText(ip).toLowerCase(); return t!=='no aplica'&&t!=='no aplica (justificado)'&&t!=='justificado'&&t.indexOf('justificad')===-1&&t!=='inactivo'; }
+
+function applyDashFilters_(rows){
+  var f = state.dashFilters;
+  if(!f) return rows;
+  var hasFilter = f.tipo||f.sexo||f.edadGrupo||f.grupoCargo||f.dept||f.empresa||f.calidad;
+  if(!hasFilter) return rows;
+  return rows.filter(function(r){
+    if(f.tipo && r.tp !== f.tipo) return false;
+    if(f.sexo && r.sx !== f.sexo) return false;
+    if(f.edadGrupo && r.ag !== f.edadGrupo) return false;
+    if(f.grupoCargo && r.gc !== f.grupoCargo) return false;
+    if(f.dept && r.dp !== f.dept) return false;
+    if(f.empresa && r.em !== f.empresa) return false;
+    if(f.calidad && classifyCalidad_j_(r.cq) !== f.calidad) return false;
+    return true;
+  });
+}
+
+function computeDashSummary_(rows){
+  var total=0,directos=0,indirectos=0,conIps=0,ipsAplicable=0,calidadOk=0,calidadRevisar=0,calidadCritico=0,edadesSum=0,edadesCount=0,flagsSum=0,directivosTotal=0,directivasTotal=0,directivosHombresTotal=0,last7=0,last30=0,prev30=0,minFecha='',maxFecha='';
+  var byEdicionesAll={},byEdicion={},byTipo={},bySexo={},byAreaIndirecto={},byDeptResidencia={},byIpsActual={},bySalario={},byGrupoEdad={},byEstadoCalidad={},byGrupoCargo={},byEmpresaIndirecto={},byMes={},ipsByTipo={},bySexoSalario={};
+  var mTipo={},mSexo={},mDept={},mEmpresa={},mSalario={},mCalidad={},mGrupoCargo_={},perEditionAll={};
+  var now=new Date(),MS_DAY=86400000;
+  var start7=new Date(now-7*MS_DAY),start30=new Date(now-30*MS_DAY),start60=new Date(now-60*MS_DAY);
+  function inc_(m,k){m[k]=(m[k]||0)+1;}
+  function incM_(m,e,k){if(!m[e])m[e]={};m[e][k]=(m[e][k]||0)+1;}
+  function getEdStats_(ed){
+    if(!perEditionAll[ed]) perEditionAll[ed]={edicion:ed,total:0,directos:0,indirectos:0,conIps:0,ipsAplicable:0,ok:0,revisar:0,critico:0,edadesSum:0,edadesCount:0,flagsSum:0,directivos:0,directivas:0,directivosHombres:0};
+    return perEditionAll[ed];
+  }
+  rows.forEach(function(r){
+    var ed=r.ed||'Sin dato', st=getEdStats_(ed);
+    inc_(byEdicionesAll,ed); inc_(byEdicion,ed); st.total++; total++;
+    var tp=r.tp||'Sin dato'; inc_(byTipo,tp); incM_(mTipo,ed,tp);
+    if(tp==='Directo'){directos++;st.directos++;}
+    if(tp==='Indirecto'){indirectos++;st.indirectos++;var ar=r.ar||'Sin dato';inc_(byAreaIndirecto,ar);var em=r.em||'Sin dato';if(em!=='Sin dato'){inc_(byEmpresaIndirecto,em);incM_(mEmpresa,ed,em);}}
+    var sx=r.sx||'Sin dato'; inc_(bySexo,sx); incM_(mSexo,ed,sx);
+    if(isDirectivo_j_(r.di)){directivosTotal++;st.directivos++;if(isFemale_j_(sx)){directivasTotal++;st.directivas++;}else if(isMale_j_(sx)){directivosHombresTotal++;st.directivosHombres++;}}
+    var dp=r.dp||'Sin dato'; inc_(byDeptResidencia,dp); incM_(mDept,ed,dp);
+    var ip=r.ip||'Sin dato'; inc_(byIpsActual,ip);
+    var isApl=isIpsAplicable_j_(ip);
+    if(isApl){ipsAplicable++;st.ipsAplicable++;if(isYesLike_j_(ip)){conIps++;st.conIps++;}}
+    if(!ipsByTipo[tp])ipsByTipo[tp]={tipo:tp,conIps:0,sinIps:0,total:0,aplicables:0};
+    ipsByTipo[tp].total++;if(isApl){ipsByTipo[tp].aplicables++;if(isYesLike_j_(ip))ipsByTipo[tp].conIps++;else ipsByTipo[tp].sinIps++;}
+    var sl=r.sl||'Sin dato'; inc_(bySalario,sl); incM_(mSalario,ed,sl);
+    var gc=r.gc||'Sin dato'; if(gc&&gc!=='Sin dato'){ inc_(byGrupoCargo,gc); incM_(mGrupoCargo_,ed,gc); }
+    if(sl!=='Sin dato'&&(sx==='Masculino'||sx==='Femenino')){if(!bySexoSalario[sx])bySexoSalario[sx]={};bySexoSalario[sx][sl]=(bySexoSalario[sx][sl]||0)+1;}
+    var ag=r.ag||'Sin dato'; inc_(byGrupoEdad,ag);
+    var cq=r.cq||'Sin dato'; inc_(byEstadoCalidad,cq);
+    var cal=classifyCalidad_j_(cq); incM_(mCalidad,ed,cal);
+    if(cal==='ok'){calidadOk++;st.ok++;}else if(cal==='critico'){calidadCritico++;st.critico++;}else if(cal==='revisar'){calidadRevisar++;st.revisar++;}
+    var nf=n(r.nf); flagsSum+=nf; st.flagsSum+=nf;
+    var ea=n(r.ea); if(ea>=15&&ea<=80){edadesSum+=ea;edadesCount++;st.edadesSum+=ea;st.edadesCount++;}
+    var fe=r.fe||''; if(fe){if(!minFecha||fe<minFecha)minFecha=fe;if(!maxFecha||fe>maxFecha)maxFecha=fe;var mk=fe.slice(0,7);if(mk)inc_(byMes,mk);var pts=fe.split('-');if(pts.length===3){var d=new Date(+pts[0],+pts[1]-1,+pts[2]);if(!isNaN(d)){if(d>=start7)last7++;if(d>=start30)last30++;else if(d>=start60)prev30++;}}}
+  });
+  var delta30=prev30?Math.round((last30-prev30)*100/prev30):(last30?100:0);
+  function mapToItems_(m){return Object.keys(m).sort().map(function(k){return{label:k,value:m[k]};});}
+  function topItems_(m,lim,excl){excl=excl||[];return mapToItems_(m).filter(function(x){return excl.indexOf(x.label)===-1;}).sort(function(a,b){return b.value-a.value;}).slice(0,lim||10);}
+  function salOrd_(s){var ord={'menos del salario mínimo':1,'salario mínimo':2,'más del salario mínimo y hasta 3 millones':3,'más de 3 millones y hasta 5 millones':4,'más de 5 millones y hasta 7 millones':5,'más de 7 millones y hasta 10 millones':6,'más de 10 millones y hasta 13 millones':7,'más de 13 millones y hasta 15 millones':8,'más de 15 millones y hasta 20 millones':9,'más de 20 millones y hasta 30 millones':10,'más de 30 millones':11,'no informa':99};function sk(x){return x.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}return s.sort(function(a,b){return(ord[sk(a.label)]||50)-(ord[sk(b.label)]||50);});}
+  function ageOrd_(s){var o={'18-24':1,'25-34':2,'35-44':3,'45-54':4,'55-64':5,'65+':6};return s.sort(function(a,b){return(o[a.label]||99)-(o[b.label]||99);});}
+  var serieMes=mapToItems_(byMes).sort(function(a,b){return a.label.localeCompare(b.label);});
+  if(serieMes.length>18)serieMes=serieMes.slice(serieMes.length-18);
+  var editionStats=Object.keys(perEditionAll).map(function(k){var st=perEditionAll[k];var edP=st.edadesCount?Math.round((st.edadesSum/st.edadesCount)*10)/10:0;var ipsPct=st.ipsAplicable?Math.round(st.conIps*100/st.ipsAplicable):0;var okPct=st.total?Math.round(st.ok*100/st.total):0;var flagsP=st.total?Math.round((st.flagsSum/st.total)*10)/10:0;return{edicion:st.edicion,total:st.total,directos:st.directos,indirectos:st.indirectos,conIps:st.conIps,ipsAplicable:st.ipsAplicable,conIpsPct:ipsPct,calidadOkPct:okPct,edadProm:edP,nFlagsProm:flagsP,ok:st.ok,revisar:st.revisar,critico:st.critico,edadesSum:st.edadesSum,edadesCount:st.edadesCount,flagsSum:st.flagsSum,directivos:st.directivos,directivas:st.directivas,directivosHombres:st.directivosHombres,directivasPct:st.directivos?Math.round(st.directivas*100/st.directivos):0};}).sort(function(a,b){return a.edicion.localeCompare(b.edicion);});
+  return{
+    edicionesDisponibles:mapToItems_(byEdicionesAll).sort(function(a,b){return a.label.localeCompare(b.label);}),
+    total:total,directos:directos,indirectos:indirectos,conIps:conIps,ipsAplicable:ipsAplicable,
+    conIpsPct:ipsAplicable?Math.round(conIps*100/ipsAplicable):0,
+    edadProm:edadesCount?Math.round((edadesSum/edadesCount)*10)/10:0,
+    calidadOkPct:total?Math.round(calidadOk*100/total):0,
+    calidadOk:calidadOk,calidadRevisar:calidadRevisar,calidadCritico:calidadCritico,
+    nFlagsProm:total?Math.round((flagsSum/total)*10)/10:0,
+    directivo:{total:directivosTotal,mujeres:directivasTotal,hombres:directivosHombresTotal,sinDatoSexo:Math.max(directivosTotal-directivasTotal-directivosHombresTotal,0),mujeresPct:directivosTotal?Math.round(directivasTotal*100/directivosTotal):0},
+    last7:last7,last30:last30,prev30:prev30,delta30Pct:delta30,
+    rangoFechas:{min:minFecha,max:maxFecha},serieMes:serieMes,editionStats:editionStats,
+    tipoPorEdicion:editionStats.map(function(s){return{edicion:s.edicion,directos:s.directos,indirectos:s.indirectos,total:s.total};}),
+    calidadPorEdicion:editionStats.map(function(s){return{edicion:s.edicion,ok:s.ok,revisar:s.revisar,critico:s.critico,total:s.total};}),
+    ipsPorTipo:Object.keys(ipsByTipo).map(function(k){return ipsByTipo[k];}).sort(function(a,b){return a.tipo.localeCompare(b.tipo);}),
+    topEmpresasIndirecto:topItems_(byEmpresaIndirecto,12,['Sin dato']),
+    porEdicion:mapToItems_(byEdicion).sort(function(a,b){return a.label.localeCompare(b.label);}),
+    porTipo:mapToItems_(byTipo),porSexo:mapToItems_(bySexo),porAreaIndirecto:mapToItems_(byAreaIndirecto),
+    porDeptResidencia:mapToItems_(byDeptResidencia).sort(function(a,b){return b.value-a.value;}).slice(0,15),
+    porIpsActual:mapToItems_(byIpsActual),porSalario:salOrd_(mapToItems_(bySalario)),
+    porGrupoEdad:ageOrd_(mapToItems_(byGrupoEdad)),porEstadoCalidad:mapToItems_(byEstadoCalidad),
+    porGrupoCargo:mapToItems_(byGrupoCargo).sort(function(a,b){return b.value-a.value;}),
+    brechaSalarial:bySexoSalario,
+    multi:{tipo:mTipo,sexo:mSexo,dept:mDept,empresa:mEmpresa,salario:mSalario,calidad:mCalidad,grupoCargo:mGrupoCargo_}
+  };
+}
+
 /* ── DASHBOARD v3 ──────────────────────────────────── */
 function renderDashboard(view){
   state.dashboardEditions = state.dashboardEditions || [];
   const edFilters = state.dashboardEditions;
   const editionKey = edFilters.length ? edFilters.slice().sort().join('|') : 'ALL';
   
-  view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando tablero...</div></div>';
-
-  state.dashFilters = state.dashFilters || { tipo: '', calidad: '', sexo: '' };
+  state.dashFilters = state.dashFilters || { tipo: '', calidad: '', sexo: '', edadGrupo: '', grupoCargo: '', dept: '', empresa: '' };
   state.summaryCache = state.summaryCache || {};
   const summaryKey = JSON.stringify(state.dashFilters);
-  const loadData = state.summaryCache[summaryKey]
-    ? Promise.resolve(state.summaryCache[summaryKey])
-    : call('getDashboardSummary', state.sessionToken, state.dashFilters).then(function(d){
-        state.summaryCache[summaryKey]=d; return d;
-      });
+  const hasLocal = !!state.allDashRows;
+  if (!hasLocal && !state.summaryCache[summaryKey]) {
+    view.innerHTML='<div class="card"><div class="loading-row"><span class="spinner"></span> Cargando tablero...</div></div>';
+  }
+  const loadData = (function(){
+    if(hasLocal){
+      return Promise.resolve(computeDashSummary_(applyDashFilters_(state.allDashRows)));
+    }
+    if(state.summaryCache[summaryKey]){
+      return Promise.resolve(state.summaryCache[summaryKey]);
+    }
+    return call('getDashboardSummary', state.sessionToken, state.dashFilters).then(function(d){
+      state.summaryCache[summaryKey]=d; return d;
+    });
+  })();
 
   function kpiTile(label, value, sub, cls){
     return '<div class="kpi'+(cls?' '+cls:'')+'">'+
@@ -655,7 +834,7 @@ function renderDashboard(view){
       '<div class="table-wrap" style="max-height:340px">'+
         '<table class="table">'+
           '<thead><tr>'+
-            '<th>Edición</th><th class="right">Total</th><th class="right">Directos</th><th class="right">Indirectos</th><th class="right">IPS % (Aplicables)</th><th class="right">Calidad OK</th><th class="right">% Mujeres en directivos</th><th class="right">Edad prom.</th>'+
+            '<th>Edición <span class="muted" style="font-size:10px">(clic = filtrar)</span></th><th class="right">Total</th><th class="right">Directos</th><th class="right">Indirectos</th><th class="right">IPS % (Aplicables)</th><th class="right">Calidad OK</th><th class="right">% Mujeres en directivos</th><th class="right">Edad prom.</th>'+
           '</tr></thead>'+
           '<tbody>'+
             rows.map(function(r){
@@ -665,7 +844,8 @@ function renderDashboard(view){
               const dirCell = dir
                 ? (dirPct+'% <span class="muted" style="font-size:11px">('+dirM+'/'+dir+')</span>')
                 : '<span class="muted">—</span>';
-              return '<tr>'+
+              const isEdActive = edFilters.length === 0 || edFilters.indexOf(r.edicion) > -1;
+              return '<tr data-cf-ed="'+esc(r.edicion)+'" style="cursor:pointer'+(isEdActive?'':';opacity:0.5')+'" title="Clic para filtrar por esta edición">'+
                 '<td><strong>'+esc(r.edicion)+'</strong></td>'+
                 '<td class="right">'+n(r.total).toLocaleString()+'</td>'+
                 '<td class="right">'+n(r.directos).toLocaleString()+' <span class="muted" style="font-size:11px">('+percent(n(r.directos),n(r.total))+'%)</span></td>'+
@@ -687,12 +867,12 @@ function renderDashboard(view){
     return ''+
       '<div class="table-wrap" style="max-height:340px">'+
         '<table class="table">'+
-          '<thead><tr><th>Tipo</th><th class="right">Con IPS</th><th class="right">Aplicables</th><th class="right">Cobertura %</th></tr></thead>'+
+          '<thead><tr><th>Tipo <span class="muted" style="font-size:10px">(clic = filtrar)</span></th><th class="right">Con IPS</th><th class="right">Aplicables</th><th class="right">Cobertura %</th></tr></thead>'+
           '<tbody>'+
             rows.map(function(r){
               const app=n(r.aplicables);
               const pct=app?Math.round(n(r.conIps)*100/app):0;
-              return '<tr>'+
+              return '<tr data-cf-key="tipo" data-cf-val="'+esc(r.tipo)+'" style="cursor:pointer" title="Clic para filtrar por '+esc(r.tipo)+'">'+
                 '<td><strong>'+esc(r.tipo)+'</strong></td>'+
                 '<td class="right">'+n(r.conIps).toLocaleString()+'</td>'+
                 '<td class="right">'+app.toLocaleString()+'</td>'+
@@ -704,18 +884,23 @@ function renderDashboard(view){
       '</div>';
   }
 
-  function renderTopItemsTable(items){
+  function renderTopItemsTable(items, filterKey){
     items = Array.isArray(items)?items:[];
     if(!items.length) return '<p class="muted">Sin datos.</p>';
     const sum=items.reduce(function(acc,x){return acc+n(x.value);},0);
     return ''+
       '<div class="table-wrap" style="max-height:340px">'+
         '<table class="table">'+
-          '<thead><tr><th>Etiqueta</th><th class="right">Conteo</th><th class="right">%</th></tr></thead>'+
+          '<thead><tr><th>Etiqueta'+(filterKey?' <span class="muted" style="font-size:10px">(clic = filtrar)</span>':'')+
+          '</th><th class="right">Conteo</th><th class="right">%</th></tr></thead>'+
           '<tbody>'+
             items.map(function(x){
               const pct=sum?Math.round(n(x.value)*100/sum):0;
-              return '<tr>'+
+              const isActive = !filterKey || !state.dashFilters[filterKey] || state.dashFilters[filterKey] === x.label;
+              const trAttr = filterKey
+                ? ' data-cf-key="'+esc(filterKey)+'" data-cf-val="'+esc(x.label)+'" style="cursor:pointer'+(isActive?'':';opacity:0.5')+'" title="Clic para filtrar"'
+                : '';
+              return '<tr'+trAttr+'>'+
                 '<td>'+esc(x.label)+'</td>'+
                 '<td class="right">'+n(x.value).toLocaleString()+'</td>'+
                 '<td class="right">'+pct+'%</td>'+
@@ -764,13 +949,49 @@ function renderDashboard(view){
     const rango=s.rangoFechas||{};
     const rangoTxt=(rango.min&&rango.max)?(rango.min+' → '+rango.max):'—';
 
+    // Surprise logic: Identify critical records for the Quality Alerts section
+    const criticalRecords = applyDashFilters_(state.allDashRows || [])
+      .filter(function(r){ return r.nf >= 3; })
+      .sort(function(a,b){ return b.nf - a.nf; })
+      .slice(0, 5);
+
     const editionOptions = [{label:'Todas las ediciones', value:'ALL'}].concat(
       (s.edicionesDisponibles||[]).map(function(x){return {label:x.label, value:x.label, count:x.value};})
     );
-    const sexoOptions = (s.porSexo || [])
-      .map(function(x){ return String(x.label || '').trim(); })
-      .filter(Boolean)
-      .sort(function(a,b){ return a.localeCompare(b); });
+    // Stable option lists — always from the full unfiltered row set so buttons never disappear
+    function uniqueSorted_(rows, key, byCount) {
+      var cnt = {};
+      rows.forEach(function(r){ var v=r[key]; if(v&&v!=='Sin dato') cnt[v]=(cnt[v]||0)+1; });
+      return Object.keys(cnt).sort(function(a,b){ return byCount?(cnt[b]-cnt[a]):a.localeCompare(b,'es'); });
+    }
+    var srcRows = state.allDashRows || [];
+    const sexoOptions = srcRows.length
+      ? uniqueSorted_(srcRows,'sx',false)
+      : (s.porSexo||[]).map(function(x){return String(x.label||'').trim();}).filter(Boolean).sort();
+    const edadGrupoOptions = ['18-24','25-34','35-44','45-54','55-64','65+'];
+    const grupoCargosOptions = srcRows.length
+      ? uniqueSorted_(srcRows,'gc',false)
+      : (s.porGrupoCargo||[]).map(function(x){return String(x.label||'').trim();}).filter(Boolean);
+    const deptOptions = srcRows.length
+      ? uniqueSorted_(srcRows,'dp',false)
+      : (s.porDeptResidencia||[]).map(function(x){return String(x.label||'').trim();}).filter(Boolean);
+    const empresaOptions = srcRows.length
+      ? uniqueSorted_(srcRows.filter(function(r){return r.tp==='Indirecto';}), 'em', true)
+      : (s.topEmpresasIndirecto||[]).map(function(x){return String(x.label||'').trim();}).filter(Boolean);
+
+    function fBtn_(val, currentVal, dataKey) {
+      var active = val === currentVal || (!val && !currentVal);
+      return '<button class="btn '+(active?'btn-primary':'btn-ghost')+' dash-fbtn" data-fkey="'+esc(dataKey)+'" data-fval="'+esc(val)+'" style="padding:2px 8px;font-size:11px;line-height:1.5;white-space:normal;text-align:left;word-break:break-word;min-height:24px;">'+(val||'Todos')+'</button>';
+    }
+    function fBtnGroup_(options, currentVal, dataKey) {
+      return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;">'+
+        [''].concat(options).map(function(opt){ return fBtn_(opt, currentVal, dataKey); }).join('')+
+      '</div>';
+    }
+    const activeChips = Object.keys(state.dashFilters).filter(function(k){ return state.dashFilters[k]; }).map(function(k){
+      var labels = {tipo:'Tipo',calidad:'Calidad',sexo:'Sexo',edadGrupo:'Edad',grupoCargo:'Cargo',dept:'Dpto.',empresa:'Empresa'};
+      return '<span class="badge info" style="cursor:pointer;font-size:11px;" data-clear-key="'+k+'" title="Quitar filtro">'+esc(labels[k]||k)+': '+esc(state.dashFilters[k])+' ×</span>';
+    }).join('');
     
     // Compute aggregated maps
     function aggregateMap(multiMap) {
@@ -787,9 +1008,17 @@ function renderDashboard(view){
 
     const aggDept = aggregateMap(s.multi ? s.multi.dept : null).slice(0, 15);
     const aggEmp = aggregateMap(s.multi ? s.multi.empresa : null).filter(function(x){return x.label!=='Sin dato';}).slice(0, 12);
+    const SAL_ORD_ = {
+      'menos del salario minimo':1,'salario minimo':2,
+      'mas del salario minimo y hasta 3 millones':3,'mas de 3 millones y hasta 5 millones':4,
+      'mas de 5 millones y hasta 7 millones':5,'mas de 7 millones y hasta 10 millones':6,
+      'mas de 10 millones y hasta 13 millones':7,'mas de 13 millones y hasta 15 millones':8,
+      'mas de 15 millones y hasta 20 millones':9,'mas de 20 millones y hasta 30 millones':10,
+      'mas de 30 millones':11,'no informa':12,'sin dato':99
+    };
+    function salKey_(s){ return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
     const aggSalario = aggregateMap(s.multi ? s.multi.salario : null).sort(function(a,b){
-       const orden = {'Menos del salario mínimo':1,'Salario mínimo':2,'Entre 1 y 2 salarios mínimos':3,'Más de 2 salarios mínimos':4,'No aplica':5,'Sin dato':99};
-       return (orden[a.label]||99) - (orden[b.label]||99);
+       return (SAL_ORD_[salKey_(a.label)]||50) - (SAL_ORD_[salKey_(b.label)]||50);
     });
     const aggTipo = aggregateMap(s.multi ? s.multi.tipo : null);
     const aggCalidad = aggregateMap(s.multi ? s.multi.calidad : null);
@@ -809,7 +1038,10 @@ function renderDashboard(view){
     if(topEmp) insights.push('Empresa indirecta con mayor presencia: '+topEmp.label+' ('+n(topEmp.value)+').');
     insights.push('Participacion de mujeres en cargos directivos: '+directivasPct+'%.');
     if(delta !== 0) insights.push('Variacion de los ultimos 30 dias frente al periodo previo: '+deltaTxt+'.');
-    var topGC = Array.isArray(s.porGrupoCargo) && s.porGrupoCargo[0];
+    var aggGrupoCargo = s.multi && s.multi.grupoCargo
+      ? aggregateMap(s.multi.grupoCargo).sort(function(a,b){return b.value-a.value;})
+      : (Array.isArray(s.porGrupoCargo) ? s.porGrupoCargo : []);
+    var topGC = aggGrupoCargo[0];
     if(topGC) insights.push('Categoria de cargo mas frecuente: '+topGC.label+' ('+n(topGC.value)+' encuestados, '+percent(n(topGC.value),total)+'%).');
     var brechaM = s.brechaSalarial && s.brechaSalarial['Masculino'];
     var brechaF = s.brechaSalarial && s.brechaSalarial['Femenino'];
@@ -821,45 +1053,48 @@ function renderDashboard(view){
 
     view.innerHTML=
       '<div style="display:flex; flex-direction:row; gap:20px; align-items:flex-start;">'+
-        '<aside class="card" style="width:260px; flex-shrink:0; position:sticky; top:20px;">'+
-          '<h3 style="margin-bottom:12px; font-size:16px;">Filtros Avanzados</h3>'+
-          '<p class="muted small" style="margin-bottom:16px;">Refina el tablero por múltiples criterios.</p>'+
-          '<div style="display:flex; flex-direction:column; gap:12px;" id="dashFiltersPanel">'+
+        '<aside class="card" style="width:240px; flex-shrink:0; position:sticky; top:20px; max-height:90vh; overflow-y:auto;">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+
+            '<h3 style="font-size:15px;margin:0;">Filtros</h3>'+
+            '<button class="btn btn-ghost" id="dashClearFilters" style="padding:2px 7px;font-size:11px;">✕ Limpiar</button>'+
+          '</div>'+
+          (activeChips ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;" id="activeChipsRow">'+activeChips+'</div>' : '')+
+          '<div style="display:flex; flex-direction:column; gap:10px;">'+
             '<div>'+
               '<label class="muted small" style="font-weight:700;">Edición</label>'+
-              '<div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;" id="dashEditionFilters">'+
+              '<div style="display:flex; flex-direction:column; gap:5px; margin-top:4px;" id="dashEditionFilters">'+
                 editionOptions.map(function(opt){
                   if(opt.value==='ALL') return '';
-                  const isSelected = edFilters.length === 0 || edFilters.indexOf(opt.value) > -1;
-                  return '<button class="btn '+(isSelected?'btn-primary':'btn-ghost')+' filter-btn" data-ed="'+esc(opt.value)+'" style="justify-content:flex-start; text-align:left;">'+(isSelected?'✓ ':'') + esc(opt.label)+'</button>';
+                  const isSel = edFilters.length === 0 || edFilters.indexOf(opt.value) > -1;
+                  return '<button class="btn '+(isSel?'btn-primary':'btn-ghost')+' filter-btn" data-ed="'+esc(opt.value)+'" style="justify-content:flex-start;text-align:left;">'+(isSel?'✓ ':'')+esc(opt.label)+'</button>';
                 }).join('')+
               '</div>'+
             '</div>'+
-            '<div>'+
-              '<label class="muted small" style="font-weight:700; display:block; margin-bottom:4px;">Tipo de Colaborador</label>'+
-              '<select id="dashFilterTipo" class="cfg" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">'+
-                '<option value="">Todos</option>'+
-                '<option value="Directo" '+(state.dashFilters.tipo==='Directo'?'selected':'')+'>Directo</option>'+
-                '<option value="Indirecto" '+(state.dashFilters.tipo==='Indirecto'?'selected':'')+'>Indirecto</option>'+
-              '</select>'+
+            '<div><label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Tipo</label>'+
+              fBtnGroup_(['Directo','Indirecto'], state.dashFilters.tipo, 'tipo')+
+            '</div>'+
+            '<div><label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Sexo</label>'+
+              fBtnGroup_(sexoOptions, state.dashFilters.sexo, 'sexo')+
+            '</div>'+
+            '<div><label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Calidad</label>'+
+              fBtnGroup_(['ok','revisar','critico'], state.dashFilters.calidad, 'calidad')+
+            '</div>'+
+            '<div><label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Tramo de Edad</label>'+
+              fBtnGroup_(edadGrupoOptions, state.dashFilters.edadGrupo, 'edadGrupo')+
             '</div>'+
             '<div>'+
-              '<label class="muted small" style="font-weight:700; display:block; margin-bottom:4px;">Calidad de Datos</label>'+
-              '<select id="dashFilterCalidad" class="cfg" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">'+
-                '<option value="">Todos</option>'+
-                '<option value="ok" '+(state.dashFilters.calidad==='ok'?'selected':'')+'>OK</option>'+
-                '<option value="revisar" '+(state.dashFilters.calidad==='revisar'?'selected':'')+'>Revisar</option>'+
-                '<option value="critico" '+(state.dashFilters.calidad==='critico'?'selected':'')+'>Crítico</option>'+
-              '</select>'+
+              '<label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Categoría de Cargo</label>'+
+              fBtnGroup_(grupoCargosOptions, state.dashFilters.grupoCargo, 'grupoCargo')+
             '</div>'+
             '<div>'+
-              '<label class="muted small" style="font-weight:700; display:block; margin-bottom:4px;">Sexo</label>'+
-              '<select id="dashFilterSexo" class="cfg" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">'+
-                '<option value="">Todos</option>'+
-                sexoOptions.map(function(opt){ return '<option value="'+esc(opt)+'" '+(state.dashFilters.sexo===opt?'selected':'')+'>'+esc(opt)+'</option>'; }).join('')+
-              '</select>'+
+              '<label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Departamento</label>'+
+              fBtnGroup_(deptOptions, state.dashFilters.dept, 'dept')+
             '</div>'+
-            '<button class="btn btn-secondary" id="dashRefresh" title="Actualizar datos" style="margin-top:16px;">↻ Sincronizar datos</button>'+
+            '<div>'+
+              '<label class="muted small" style="font-weight:700;display:block;margin-bottom:2px;">Empresa contratista</label>'+
+              fBtnGroup_(empresaOptions, state.dashFilters.empresa, 'empresa')+
+            '</div>'+
+            '<button class="btn btn-secondary" id="dashRefresh" style="margin-top:4px;">↻ Sincronizar datos</button>'+
           '</div>'+
         '</aside>'+
         '<div style="flex:1; min-width:0;">'+
@@ -910,6 +1145,24 @@ function renderDashboard(view){
         '</ul>'+
       '</div>'+
 
+      (criticalRecords.length ? 
+      '<div class="card" style="margin-top:16px; border: 1px solid var(--danger); background: rgba(220,38,38,0.02);">'+
+        '<div class="chart-hd"><h3 style="color:var(--danger);">⚠️ Alertas de Calidad (Hallazgos críticos)</h3><span class="badge danger">'+criticalRecords.length+' alertas</span></div>'+
+        '<p class="muted small" style="margin-bottom:12px;">Registros que activaron 3 o más banderas del algoritmo de calidad.</p>'+
+        '<div class="table-wrap"><table class="table">'+
+          '<thead><tr><th>Edición</th><th>Dpto.</th><th>Empresa</th><th class="right">Banderas</th><th>Acción</th></tr></thead>'+
+          '<tbody>' + criticalRecords.map(function(r){
+            return '<tr>'+
+              '<td>'+esc(r.ed)+'</td>'+
+              '<td>'+esc(r.dp)+'</td>'+
+              '<td>'+esc(r.em)+'</td>'+
+              '<td class="right"><span class="badge danger">'+r.nf+'</span></td>'+
+              '<td><button class="btn btn-ghost btn-small" onclick="window.nav(\'Respuestas\')">Ver en base</button></td>'+
+            '</tr>';
+          }).join('') + '</tbody>'+
+        '</table></div>'+
+      '</div>' : '')+
+
       '<div class="grid-2" style="margin-top:16px">'+
         '<div class="card"><div class="chart-hd"><h3>Tendencia mensual</h3><span class="chart-total">últimos '+(Array.isArray(s.serieMes)?s.serieMes.length:0)+'</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Volumen de encuestas completadas por mes, útil para identificar picos de recolección.</p><div style="position:relative;height:240px;width:100%"><canvas id="cSerieMes"></canvas></div></div>'+
         '<div class="card"><div class="chart-hd"><h3>Directos vs indirectos</h3><span class="chart-total">por edición</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Proporción de colaboradores directos e indirectos encuestados a lo largo del tiempo.</p><div style="position:relative;height:240px;width:100%"><canvas id="cTipoEd"></canvas></div></div>'+
@@ -956,7 +1209,7 @@ function renderDashboard(view){
             '<h3 style="margin-bottom:0">Top empresas (indirectos)</h3>'+
             '<span class="badge info">'+(Array.isArray(s.topEmpresasIndirecto)?s.topEmpresasIndirecto.length:0)+'</span>'+
           '</div>'+
-          renderTopItemsTable(s.topEmpresasIndirecto)+
+          renderTopItemsTable(s.topEmpresasIndirecto, 'empresa')+
         '</div>'+
       '</div>'+
       '<div class="card" style="margin-top:18px; padding:24px; background: rgba(15,118,110,0.05); border:1px solid rgba(15,118,110,0.2);">'+
@@ -981,12 +1234,23 @@ function renderDashboard(view){
         renderDashboard(view);
       };
     });
-    ['dashFilterTipo','dashFilterCalidad','dashFilterSexo'].forEach(function(id){
-      document.getElementById(id).onchange = function(){
-        state.dashFilters[id.replace('dashFilter','').toLowerCase()] = this.value;
-        renderDashboard(view);
-      };
+    // Button filters (Tipo, Sexo, Calidad, EdadGrupo)
+    function applyDashFilter_(key, val) {
+      state.dashFilters[key] = (state.dashFilters[key] === val && val !== '') ? '' : val;
+      renderDashboard(view);
+    }
+    [].forEach.call(document.querySelectorAll('.dash-fbtn'), function(btn) {
+      btn.onclick = function() { applyDashFilter_(this.dataset.fkey, this.dataset.fval); };
     });
+    // Active chip × buttons
+    [].forEach.call(document.querySelectorAll('[data-clear-key]'), function(el) {
+      el.onclick = function() { state.dashFilters[this.dataset.clearKey] = ''; renderDashboard(view); };
+    });
+    var clearBtn = document.getElementById('dashClearFilters');
+    if(clearBtn) clearBtn.onclick = function(){
+      state.dashFilters = { tipo:'', calidad:'', sexo:'', edadGrupo:'', grupoCargo:'', dept:'', empresa:'' };
+      renderDashboard(view);
+    };
 
     document.getElementById('dashExportSummary').onclick=function(){
       const payload = {
@@ -1021,17 +1285,33 @@ function renderDashboard(view){
       const self = this;
       const isAdmin = state.user && state.user.role === 'admin';
       state.responsesData = null;
+      function reloadRows_(){
+        state.allDashRows = null;
+        call('getAnalyticRowsForDashboard', state.sessionToken).then(function(rows){
+          if(Array.isArray(rows) && rows.length) state.allDashRows = rows;
+        }).catch(function(){});
+      }
       if(!isAdmin){
         state.summaryCache = {};
+        reloadRows_();
         renderDashboard(view);
         return;
       }
       btnLoad(self,'Sincronizando...');
-      call('rebuildAnalytics').then(function(){
+      call('rebuildAnalytics', state.sessionToken).then(function(){
         state.statsCacheByEdition = {};
         state.summaryCache = {};
+        state.allDashRows = null;
         toast('Datos sincronizados desde RESPUESTAS','success');
         renderDashboard(view);
+        // Recargar filas en segundo plano
+        call('getAnalyticRowsForDashboard', state.sessionToken).then(function(rows){
+          if(Array.isArray(rows) && rows.length){
+            state.allDashRows = rows;
+            var v = document.getElementById('view');
+            if(v && state.activeTab === 'dashboard') renderDashboard(v);
+          }
+        }).catch(function(){});
       }).catch(function(err){
         toast(err.message || String(err),'error');
         btnReset(self);
@@ -1094,9 +1374,69 @@ function renderDashboard(view){
       donut('cTipo', aggTipo, ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
       donut('cCalidad', aggCalidad, ['#16a34a','#d97706','#dc2626','#94a3b8']);
 
-      // grupo_cargo chart
-      var gcItems = Array.isArray(s.porGrupoCargo) ? s.porGrupoCargo : [];
-      hbar('cGrupoCargo', gcItems, TEAL_GRAD);
+      // grupo_cargo chart — aggGrupoCargo computed above (before insights, edition-filtered)
+      hbar('cGrupoCargo', aggGrupoCargo, TEAL_GRAD);
+
+      // Cross-filter click handlers — clicking a chart segment filters the dashboard
+      function addCrossFilter_(chartId, filterKey, labelFn) {
+        var canvas = document.getElementById(chartId);
+        if (!canvas) return;
+        canvas.style.cursor = 'pointer';
+        canvas.onclick = function(evt) {
+          var chart = CHARTS[chartId];
+          if (!chart) return;
+          var type = chart.config && chart.config.type;
+          // Use intersect:false so clicking near a bar still registers; nearest works for all types
+          var els = chart.getElementsAtEventForMode(evt, 'nearest', {intersect: false}, true);
+          if (!els.length) return;
+          var label = labelFn ? labelFn(chart, els[0]) : chart.data.labels[els[0].index];
+          if (!label) return;
+          state.dashFilters[filterKey] = state.dashFilters[filterKey] === label ? '' : label;
+          renderDashboard(view);
+        };
+      }
+      addCrossFilter_('cGrupoCargo', 'grupoCargo');
+      addCrossFilter_('cDept', 'dept');
+      addCrossFilter_('cEmp', 'empresa');
+      addCrossFilter_('cTipo', 'tipo');
+      addCrossFilter_('cCalidad', 'calidad', function(chart, el) {
+        var raw = chart.data.labels[el.index];
+        var calMap = {'ok':'ok','revisar':'revisar','critico':'critico','crítico':'critico'};
+        return calMap[(raw||'').toLowerCase()] || raw;
+      });
+      // cBrecha: click on a bar → filter by sexo (Masculino / Femenino)
+      addCrossFilter_('cBrecha', 'sexo', function(chart, el) {
+        return (chart.data.datasets[el.datasetIndex] || {}).label || '';
+      });
+
+      // Table row cross-filter — rows with data-cf-key / data-cf-val
+      [].forEach.call(view.querySelectorAll('tr[data-cf-key]'), function(tr) {
+        tr.onmouseenter = function(){ this.style.background='rgba(15,118,110,0.07)'; };
+        tr.onmouseleave = function(){ this.style.background=''; };
+        tr.onclick = function() {
+          var key = this.dataset.cfKey;
+          var val = this.dataset.cfVal;
+          if(!key || !val) return;
+          state.dashFilters[key] = state.dashFilters[key] === val ? '' : val;
+          renderDashboard(view);
+        };
+      });
+      // Edition table rows — toggle edition filter
+      [].forEach.call(view.querySelectorAll('tr[data-cf-ed]'), function(tr) {
+        tr.onmouseenter = function(){ this.style.background='rgba(15,118,110,0.07)'; };
+        tr.onmouseleave = function(){ this.style.background=''; };
+        tr.onclick = function() {
+          var val = this.dataset.cfEd;
+          if(!val) return;
+          var idx = state.dashboardEditions.indexOf(val);
+          if(idx > -1) {
+            state.dashboardEditions = state.dashboardEditions.filter(function(v){return v!==val;});
+          } else {
+            state.dashboardEditions.push(val);
+          }
+          renderDashboard(view);
+        };
+      });
 
       // brecha salarial chart
       var brecha = s.brechaSalarial || {};
@@ -1415,12 +1755,28 @@ function renderResponses(view){
     };
   };
 
+  // Fast path: use allDashRows (already in memory, compact → full field mapping)
+  if(state.allDashRows && state.allDashRows.length) {
+    doRender(state.allDashRows.map(function(r){
+      return {
+        edicion: r.ed, fecha_encuesta: r.fe, tipo_colaborador: r.tp,
+        sexo: r.sx, edad: r.ea, edad_grupo: r.ag,
+        departamento_residencia: r.dp, descuento_ips_actual: r.ip,
+        salario_actual_banda: r.sl, empresa_contratista: r.em,
+        estado_calidad: r.cq, n_flags: r.nf, grupo_cargo: r.gc,
+        es_cargo_directivo: r.di, area_colaborador_indirecto: r.ar
+      };
+    }));
+    return Promise.resolve();
+  }
   if(state.responsesData){
     doRender(state.responsesData);
     return Promise.resolve();
   }
   return call('listResponses',state.sessionToken,500).then(function(rowsRaw){
     doRender(Array.isArray(rowsRaw)?rowsRaw:[]);
+  }).catch(function(err){
+    view.innerHTML='<div class="card"><div class="alert alert-danger">Error cargando respuestas: '+esc(err.message||String(err))+'</div></div>';
   });
 }
 
@@ -1483,6 +1839,19 @@ function renderInvitations(view){
           '<p class="muted" style="margin-top:10px;font-size:11px">Haz clic en un estado para filtrar la tabla.</p>'+
         '</div>'+
       '</div>'+
+
+      /* ── Importar desde Nómina ── */
+      '<div class="card" style="margin-bottom:18px">'+
+        '<div class="spread" style="margin-bottom:12px">'+
+          '<div>'+
+            '<h3 style="margin-bottom:2px">Importar desde Nómina 2026</h3>'+
+            '<p class="muted small">Genera invitaciones para los colaboradores directos de Paracel. Al completar el cuestionario, la cédula precarga sus datos laborales automáticamente.</p>'+
+          '</div>'+
+          '<button class="btn btn-secondary" id="btnCargarNomina">Cargar contactos</button>'+
+        '</div>'+
+        '<div id="nominaPanel"></div>'+
+      '</div>'+
+
       '<div class="card">'+
         '<div class="spread" style="margin-bottom:12px">'+
           '<h3 style="margin-bottom:0">Historial de invitaciones</h3>'+
@@ -1533,6 +1902,109 @@ function renderInvitations(view){
     };
     document.getElementById('btnGenInv').onclick=function(){ invAction('createInvitations',this); };
     document.getElementById('btnSendInv').onclick=function(){ invAction('sendInvitations',this); };
+
+    /* ── Panel Nómina ── */
+    var nominaContacts = [];
+    document.getElementById('btnCargarNomina').onclick = function(){
+      const btn = this;
+      btnLoad(btn, 'Cargando...');
+      call('listNomina', state.sessionToken).then(function(contactos){
+        nominaContacts = Array.isArray(contactos) ? contactos : [];
+        btnReset(btn);
+        renderNominaPanel_();
+      }).catch(function(err){
+        toast(err.message||String(err), 'error');
+        btnReset(btn);
+      });
+    };
+
+    function renderNominaPanel_(){
+      const panel = document.getElementById('nominaPanel');
+      if (!panel) return;
+      var searchVal = '';
+      var selectedCedulas = new Set(nominaContacts.map(function(c){ return c.cedula; }));
+
+      function getFiltered(){
+        return nominaContacts.filter(function(c){
+          if (!searchVal) return true;
+          var q = searchVal.toLowerCase();
+          return (c.nombre_completo||'').toLowerCase().indexOf(q) > -1 ||
+                 (c.email||'').toLowerCase().indexOf(q) > -1 ||
+                 (c.cargo||'').toLowerCase().indexOf(q) > -1 ||
+                 (c.area||'').toLowerCase().indexOf(q) > -1 ||
+                 (c.cedula||'').indexOf(q) > -1;
+        });
+      }
+
+      function renderTable(){
+        const filtered = getFiltered();
+        const allChecked = filtered.every(function(c){ return selectedCedulas.has(c.cedula); });
+        const selCount = filtered.filter(function(c){ return selectedCedulas.has(c.cedula); }).length;
+        panel.innerHTML =
+          '<div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">'+
+            '<input class="input" id="nominaSearch" placeholder="Buscar por nombre, email, cargo o área..." value="'+esc(searchVal)+'" style="flex:1;min-width:220px">'+
+            '<span class="badge info">'+selCount+' seleccionados de '+nominaContacts.length+'</span>'+
+            '<input class="input" id="nominaEdition" value="'+esc(state.bootstrap.activeEdition)+'" style="width:80px" title="Edición">'+
+            '<button class="btn btn-secondary" id="btnNominaGenerar">Generar tokens</button>'+
+            '<button class="btn" id="btnNominaEnviar">Generar y enviar correos</button>'+
+          '</div>'+
+          '<div class="table-wrap" style="max-height:320px;overflow-y:auto">'+
+            '<table>'+
+              '<thead><tr>'+
+                '<th><input type="checkbox" id="nominaChkAll" '+(allChecked?'checked':'')+' title="Seleccionar todos"></th>'+
+                '<th>Cédula</th><th>Nombre</th><th>Cargo</th><th>Área</th><th>Email</th>'+
+              '</tr></thead>'+
+              '<tbody>'+
+              filtered.map(function(c){
+                const chk = selectedCedulas.has(c.cedula) ? ' checked' : '';
+                return '<tr>'+
+                  '<td><input type="checkbox" class="nomina-chk" data-cedula="'+esc(c.cedula)+'"'+chk+'></td>'+
+                  '<td>'+esc(c.cedula)+'</td>'+
+                  '<td>'+esc(c.nombre_completo)+'</td>'+
+                  '<td style="font-size:11px">'+esc(c.cargo)+'</td>'+
+                  '<td style="font-size:11px">'+esc(c.area)+'</td>'+
+                  '<td style="font-size:11px">'+esc(c.email)+'</td>'+
+                '</tr>';
+              }).join('')+
+              '</tbody>'+
+            '</table>'+
+          '</div>';
+
+        document.getElementById('nominaSearch').oninput = function(){
+          searchVal = this.value;
+          renderTable();
+        };
+        document.getElementById('nominaChkAll').onchange = function(){
+          var filtered2 = getFiltered();
+          if (this.checked) filtered2.forEach(function(c){ selectedCedulas.add(c.cedula); });
+          else filtered2.forEach(function(c){ selectedCedulas.delete(c.cedula); });
+          renderTable();
+        };
+        [].forEach.call(panel.querySelectorAll('.nomina-chk'), function(chk){
+          chk.onchange = function(){
+            if (this.checked) selectedCedulas.add(this.dataset.cedula);
+            else selectedCedulas.delete(this.dataset.cedula);
+            renderTable();
+          };
+        });
+
+        const nominaAction = function(fn, btn){
+          const edition = (document.getElementById('nominaEdition')||{}).value || state.bootstrap.activeEdition;
+          const cedulas = Array.from(selectedCedulas);
+          if (!cedulas.length){ toast('Seleccione al menos un contacto.','error'); return; }
+          btnLoad(btn, fn==='sendInvitationsFromNomina'?'Enviando...':'Generando tokens...');
+          call(fn, state.sessionToken, { edition_id: edition, cedulas: cedulas }).then(function(res){
+            const msg = 'Creados: '+(res.created||0)+' · Omitidos: '+(res.skipped||0)+(res.sent!=null?' · Enviados: '+res.sent:'');
+            toast(msg, 'success', 5000);
+            renderInvitations(view);
+          }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(btn); });
+        };
+        document.getElementById('btnNominaGenerar').onclick = function(){ nominaAction('createInvitationsFromNomina', this); };
+        document.getElementById('btnNominaEnviar').onclick  = function(){ nominaAction('sendInvitationsFromNomina',  this); };
+      }
+
+      renderTable();
+    }
   });
 }
 
@@ -1598,7 +2070,10 @@ function renderConfig(view){
         Object.keys(cfg).map(function(k){
           return '<div><label class="label">'+esc(k)+'</label><input class="input cfg" data-key="'+esc(k)+'" value="'+esc(cfg[k])+'"></div>';
         }).join('')+
-        '<div class="full"><button class="btn" id="btnSaveCfg">Guardar configuración</button></div>'+
+        '<div class="full row">'+
+          '<button class="btn" id="btnSaveCfg">Guardar configuración</button>'+
+          '<button class="btn btn-secondary" id="btnPurgeCache">Limpiar todos los cachés</button>'+
+        '</div>'+
       '</div>'+
     '</div>';
   document.getElementById('btnSaveCfg').onclick=function(){
@@ -1606,6 +2081,13 @@ function renderConfig(view){
     const pairs=[].slice.call(document.querySelectorAll('.cfg')).map(function(el){return {clave:el.dataset.key,valor:el.value};});
     call('updateConfig',state.sessionToken,pairs).then(function(){
       toast('Configuración actualizada','success'); loadBootstrap();
+    }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
+  };
+  document.getElementById('btnPurgeCache').onclick=function(){
+    const self=this; btnLoad(self,'Limpiando...');
+    call('clearSystemCache', state.sessionToken).then(function(){
+      toast('Caché del servidor y cliente invalidado','success');
+      location.reload();
     }).catch(function(err){ toast(err.message||String(err),'error'); btnReset(self); });
   };
 }
@@ -1817,6 +2299,20 @@ function renderSurveyV2(view, previewMode){
   const sections = surveySections_();
   state.surveyDraft = safeParse(localStorage.getItem(surveyDraftKey_()), {});
   if(!state.surveyDraft || typeof state.surveyDraft !== 'object') state.surveyDraft = {};
+
+  // Aplicar prefill desde schema si el draft está vacío y hay datos de nómina
+  if (!isPreview && state.schema && state.schema.prefill) {
+    var pf = state.schema.prefill;
+    var draftHasData = Object.keys(state.surveyDraft).some(function(k){ return state.surveyDraft[k]; });
+    if (!draftHasData) {
+      Object.keys(pf).forEach(function(k){ if(k !== '_source' && pf[k]) state.surveyDraft[k] = pf[k]; });
+      saveSurveyDraft_();
+    }
+    state._prefillApplied = true;
+  } else {
+    state._prefillApplied = false;
+  }
+
   if(!state.surveyStartedAt){
     state.surveyStartedAt = localStorage.getItem(surveyStartKey_()) || localStorage.getItem('encuesta_colab_started_at') || new Date().toISOString();
     localStorage.setItem(surveyStartKey_(), state.surveyStartedAt);
@@ -1929,6 +2425,24 @@ function renderSurveyV2(view, previewMode){
       };
       el.addEventListener('input', sync);
       el.addEventListener('change', sync);
+
+      // Al salir del campo cédula, buscar en nómina y precargar datos laborales
+      if (field === 'cedula' && state.token && !isPreview) {
+        el.addEventListener('blur', function() {
+          var ced = (el.value || '').trim();
+          if (!ced) return;
+          call('lookupByCedula', state.token, ced).then(function(pf) {
+            if (!pf) { toast('Cédula no encontrada en el registro de personal. Complete los campos manualmente.', 'warn', 4000); return; }
+            Object.keys(pf).forEach(function(k){
+              if (k !== '_source' && pf[k] && !state.surveyDraft[k]) state.surveyDraft[k] = pf[k];
+            });
+            state._prefillApplied = true;
+            saveSurveyDraft_();
+            renderSurveySection();
+            toast('✔ Datos laborales precargados desde el registro de personal.', 'success', 4000);
+          }).catch(function(){});
+        });
+      }
     });
 
     document.getElementById('btnPrevSurvey').onclick = function(){
@@ -2009,8 +2523,10 @@ function renderQuestion(q,draft){
 
 function evalVis(rule,vals){
   if(!rule) return true;
-  const p=rule.split('='); if(p.length!==2) return true;
-  return String(vals[p[0]]||'')===p[1];
+  const p=rule.split('='); 
+  if(p.length!==2) return true;
+  const norm = function(v) { return String(v||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); };
+  return norm(vals[p[0]]) === norm(p[1]);
 }
 function collectVals(){
   const out={};

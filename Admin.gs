@@ -53,6 +53,16 @@ function getDashboardSummary(sessionToken, filters) {
     allRows = allRows.filter(function(r) {
       if (filters.tipo && normalizeText_(r.tipo_colaborador) !== normalizeText_(filters.tipo)) return false;
       if (filters.sexo && normalizeText_(r.sexo) !== normalizeText_(filters.sexo)) return false;
+      if (filters.edadGrupo && normalizeText_(r.edad_grupo) !== normalizeText_(filters.edadGrupo)) return false;
+      if (filters.grupoCargo) {
+        var gc = normalizeText_(r.grupo_cargo) || computeGrupoCargo_(r.cargo || '');
+        if (normalizeText_(gc) !== normalizeText_(filters.grupoCargo)) return false;
+      }
+      if (filters.dept && normalizeText_(r.departamento_residencia) !== normalizeText_(filters.dept)) return false;
+      if (filters.empresa) {
+        var empC = canonicalCompany_(r.empresa_contratista) || 'Sin dato';
+        if (empC !== filters.empresa) return false;
+      }
       if (filters.calidad) {
         var t = normalizeText_(r.estado_calidad).toLowerCase();
         var cal = 'ok';
@@ -107,6 +117,7 @@ function getDashboardSummary(sessionToken, filters) {
   var mEmpresa = {};
   var mSalario = {};
   var mCalidad = {};
+  var mGrupoCargo = {};
   var byGrupoCargo = {};
   var bySexoSalario = {};
 
@@ -256,7 +267,8 @@ function getDashboardSummary(sessionToken, filters) {
     incM_(mSalario, ed, sal);
 
     var gc = normalizeText_(r.grupo_cargo) || (r.cargo ? computeGrupoCargo_(r.cargo) : '');
-    if (gc) inc_(byGrupoCargo, gc);
+    gc = gc ? removeAccents_(gc) : '';
+    if (gc) { inc_(byGrupoCargo, gc); incM_(mGrupoCargo, ed, gc); }
 
     var sexoKey = keyOf_(r.sexo);
     if (sal && sal !== 'Sin dato' && sexoKey && (sexoKey === 'Masculino' || sexoKey === 'Femenino')) {
@@ -417,7 +429,8 @@ function getDashboardSummary(sessionToken, filters) {
       dept: mDept,
       empresa: mEmpresa,
       salario: mSalario,
-      calidad: mCalidad
+      calidad: mCalidad,
+      grupoCargo: mGrupoCargo
     }
   };
 
@@ -425,6 +438,51 @@ function getDashboardSummary(sessionToken, filters) {
   // TTL largo: datos históricos casi no cambian; se invalida con bumpDashboardCacheVersion_
   cache.put(cacheKey, jsonStringify_(summary), 21600);
   return summary;
+}
+
+// Returns compact canonicalized rows for instant client-side dashboard filtering.
+// Fields use short keys to minimise JSON payload (~300KB for 2300 rows).
+function getAnalyticRowsForDashboard(sessionToken) {
+  requireRole_(sessionToken, ['admin','viewer']);
+  var cKey = 'dash_rows_v3_' + getDashboardCacheVersion_();
+  var cache = CacheService.getScriptCache();
+  var cached = getChunked_(cache, cKey);
+  if (cached) return cached;
+
+  var allRows = getCombinedAnalyticRows_(ANALYTIC_MIN_FIELDS_);
+  var result = allRows.map(function(r) {
+    var fecha = '';
+    var ts = r.fecha_encuesta || r.submission_ts || '';
+    if (ts instanceof Date) {
+      fecha = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else {
+      var t = normalizeText_(String(ts));
+      var m = t.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (m) fecha = m[1];
+    }
+    var gc = normalizeText_(r.grupo_cargo);
+    if (!gc && r.cargo) gc = computeGrupoCargo_(String(r.cargo));
+    gc = gc ? removeAccents_(gc) : '';
+    return {
+      ed: normalizeText_(r.edicion) || 'Sin dato',
+      fe: fecha,
+      tp: normalizeText_(r.tipo_colaborador) || 'Sin dato',
+      sx: normalizeText_(r.sexo) || 'Sin dato',
+      ag: normalizeText_(r.edad_grupo) || 'Sin dato',
+      dp: normalizeText_(r.departamento_residencia) || 'Sin dato',
+      ip: normalizeText_(r.descuento_ips_actual) || 'Sin dato',
+      sl: canonicalSalary_(r.salario_actual_banda) || 'Sin dato',
+      em: canonicalCompany_(r.empresa_contratista) || 'Sin dato',
+      cq: normalizeText_(r.estado_calidad) || 'Sin dato',
+      nf: Number(r.n_flags) || 0,
+      gc: gc || 'Sin dato',
+      di: normalizeText_(r.es_cargo_directivo) || '',
+      ar: normalizeText_(r.area_colaborador_indirecto) || 'Sin dato',
+      ea: Number(r.edad) || 0
+    };
+  });
+  putChunked_(cache, cKey, result, 21600);
+  return result;
 }
 
 function countBy_(rows, field) {
@@ -576,15 +634,37 @@ function getCombinedAnalyticRows_(fieldsReq) {
   var cache  = CacheService.getScriptCache();
   var rowKey = 'analytic_rows_' + getDashboardCacheVersion_();
 
-  // 1) Try row-level chunked cache (avoids re-parsing the 477KB snapshot CSV)
   var allRows = getChunked_(cache, rowKey);
   if (!allRows) {
+    // Snapshot = Python-cleaned authoritative base (2024+2025)
+    var snapRows = getEmbeddedSnapshotRows_(null);
+    // Live = new GAS submissions in BASE_ANALITICA
     var liveRows = getRecentRowsAsObjects_(APP_CFG.SHEETS.ANALYTIC, null, null);
-    allRows = liveRows.length ? liveRows : getEmbeddedSnapshotRows_(null);
+
+    if (snapRows.length && liveRows.length) {
+      // Merge: snapshot wins for any overlapping source_uuid; add truly-new live rows
+      var snapUuids = {};
+      snapRows.forEach(function(r) { if (r.source_uuid) snapUuids[String(r.source_uuid)] = true; });
+      // Also deduplicate by respondente_id+edicion as fallback
+      var snapKeys = {};
+      snapRows.forEach(function(r) {
+        var k = String(r.respondente_id || '') + '|' + String(r.edicion || '');
+        if (k !== '|') snapKeys[k] = true;
+      });
+      var newLive = liveRows.filter(function(r) {
+        if (r.source_uuid && snapUuids[String(r.source_uuid)]) return false;
+        var k = String(r.respondente_id || '') + '|' + String(r.edicion || '');
+        if (k !== '|' && snapKeys[k]) return false;
+        return true;
+      });
+      allRows = snapRows.concat(newLive);
+    } else {
+      allRows = snapRows.length ? snapRows : liveRows;
+    }
+
     if (allRows.length) putChunked_(cache, rowKey, allRows, 21600);
   }
 
-  // 2) Filter to requested fields (in-memory, fast)
   if (!fields || !fields.length) return allRows;
   return allRows.map(function(r) {
     var obj = {};
@@ -1046,19 +1126,28 @@ function updateConfig(sessionToken, pairs) {
   return { ok: true };
 }
 
-function rebuildAnalytics() {
+/**
+ * Reconstruye BASE_ANALITICA y RESPUESTAS_LONG desde cero.
+ * Ahora requiere validación de sesión y asegura la existencia de las hojas.
+ */
+function rebuildAnalytics(sessionToken) {
   try {
+    // Si se llama desde el cliente, validar rol. Si es interno (ej. patchIPS), permitir.
+    if (sessionToken) {
+      requireRole_(sessionToken, ['admin']);
+    }
+
     bumpDashboardCacheVersion_(); // Invalidate cache immediately
     var responseRows = getRowsAsObjects_(APP_CFG.SHEETS.RESPONSES);
     var analyticHeaders = getAnalyticHeaders_();
     var analyticData = responseRows.map(function(r) {
       return analyticHeaders.map(function(h){ return r[h]; });
     });
+    
+    syncHeaders_(APP_CFG.SHEETS.ANALYTIC, analyticHeaders);
     var shA = getSheet_(APP_CFG.SHEETS.ANALYTIC);
     shA.clearContents();
-    if (analyticHeaders.length) {
-      shA.getRange(1,1,1,analyticHeaders.length).setValues([analyticHeaders]);
-    }
+    shA.getRange(1,1,1,analyticHeaders.length).setValues([analyticHeaders]);
     if (analyticData.length) {
       shA.getRange(2,1,analyticData.length,analyticHeaders.length).setValues(analyticData);
     }
@@ -1073,6 +1162,8 @@ function rebuildAnalytics() {
       }
     });
   });
+  
+  syncHeaders_(APP_CFG.SHEETS.LONG, longHeaders);
   var shL = getSheet_(APP_CFG.SHEETS.LONG);
   shL.clearContents();
   shL.getRange(1,1,1,longHeaders.length).setValues([longHeaders]);
@@ -1082,4 +1173,14 @@ function rebuildAnalytics() {
   } catch (e) {
     throw new Error('Error al reconstruir la analítica: ' + e.message);
   }
+}
+
+/**
+ * Función de utilidad para limpiar todo el caché del sistema.
+ */
+function clearSystemCache(sessionToken) {
+  requireRole_(sessionToken, ['admin']);
+  bumpDashboardCacheVersion_();
+  CacheService.getScriptCache().removeAll();
+  return { ok: true };
 }

@@ -34,13 +34,29 @@ function getSurveySchemaFromInvitation_(invitation) {
     });
   });
 
+  var prefill = null;
+  if (invitation && normalizeText_(invitation.cedula)) {
+    try {
+      var nominaRows = getRowsAsObjects_(APP_CFG.SHEETS.NOMINA);
+      var ced = normalizeText_(invitation.cedula);
+      for (var ni = 0; ni < nominaRows.length; ni++) {
+        if (normalizeText_(nominaRows[ni].cedula) === ced) {
+          prefill = buildPrefill_(nominaRows[ni]);
+          break;
+        }
+      }
+    } catch(e) { /* NOMINA sheet may not exist yet */ }
+  }
+
   return {
     editionId: invitation ? invitation.edition_id : activeEdition_(),
     invitation: invitation ? {
       email: invitation.email,
       nombre: invitation.nombre_destinatario,
+      cedula: invitation.cedula || '',
       token: invitation.token
     } : null,
+    prefill: prefill,
     sections: Object.keys(sections).map(function(k) { return sections[k]; }).sort(function(a,b){ return a.order - b.order; }),
     catalogs: buildClientCatalogs_()
   };
@@ -412,13 +428,14 @@ function canonicalShift_(v) {
 }
 
 function canonicalSalary_(v) {
-  var k = normalizeText_(v).toLowerCase();
+  // Use accent-stripped lowercase key to avoid NFC/NFD mismatches from Python CSV
+  var k = removeAccents_(normalizeText_(v)).toLowerCase();
   var map = {
-    'menos del salario mínimo': 'Menos del salario mínimo',
-    '< sal. mínimo': 'Menos del salario mínimo',
-    'sal. mínimo': 'Salario mínimo',
-    'salario mínimo': 'Salario mínimo',
-    'sal. mín. - 3m': 'Más del salario mínimo y hasta 3 millones',
+    'menos del salario minimo': 'Menos del salario mínimo',
+    '< sal. minimo': 'Menos del salario mínimo',
+    'sal. minimo': 'Salario mínimo',
+    'salario minimo': 'Salario mínimo',
+    'sal. min. - 3m': 'Más del salario mínimo y hasta 3 millones',
     '3m - 5m': 'Más de 3 millones y hasta 5 millones',
     '5m - 7m': 'Más de 5 millones y hasta 7 millones',
     '7m - 10m': 'Más de 7 millones y hasta 10 millones',
@@ -427,19 +444,19 @@ function canonicalSalary_(v) {
     '15m - 20m': 'Más de 15 millones y hasta 20 millones',
     '20m - 30m': 'Más de 20 millones y hasta 30 millones',
     '> 30m': 'Más de 30 millones',
-    'menos del salario mínimo (menos de gs. 2.680.373)': 'Menos del salario mínimo',
-    'salario mínimo (gs. 2.680.373)': 'Salario mínimo',
-    'más del salario mínimo y hasta 3 millones': 'Más del salario mínimo y hasta 3 millones',
-    'más de 3 millones y hasta 5 millones': 'Más de 3 millones y hasta 5 millones',
-    'más de 5 millones y hasta 7 millones': 'Más de 5 millones y hasta 7 millones',
-    'más de 7 millones y hasta 10 millones': 'Más de 7 millones y hasta 10 millones',
-    'más de 10 millones y hasta 13 millones': 'Más de 10 millones y hasta 13 millones',
-    'más de 13 millones y hasta 15 millones': 'Más de 13 millones y hasta 15 millones',
-    'más de 15 millones y hasta 20 millones': 'Más de 15 millones y hasta 20 millones',
-    'más de 20 millones y hasta 30 millones': 'Más de 20 millones y hasta 30 millones',
-    'más de 30 millones': 'Más de 30 millones',
+    'menos del salario minimo (menos de gs. 2.680.373)': 'Menos del salario mínimo',
+    'salario minimo (gs. 2.680.373)': 'Salario mínimo',
+    'mas del salario minimo y hasta 3 millones': 'Más del salario mínimo y hasta 3 millones',
+    'mas de 3 millones y hasta 5 millones': 'Más de 3 millones y hasta 5 millones',
+    'mas de 5 millones y hasta 7 millones': 'Más de 5 millones y hasta 7 millones',
+    'mas de 7 millones y hasta 10 millones': 'Más de 7 millones y hasta 10 millones',
+    'mas de 10 millones y hasta 13 millones': 'Más de 10 millones y hasta 13 millones',
+    'mas de 13 millones y hasta 15 millones': 'Más de 13 millones y hasta 15 millones',
+    'mas de 15 millones y hasta 20 millones': 'Más de 15 millones y hasta 20 millones',
+    'mas de 20 millones y hasta 30 millones': 'Más de 20 millones y hasta 30 millones',
+    'mas de 30 millones': 'Más de 30 millones',
     'no informa': 'No informa',
-    'no quiso dar información': 'No informa'
+    'no quiso dar informacion': 'No informa'
   };
   return map[k] || properCase_(v);
 }
@@ -485,31 +502,35 @@ function canonicalDistrict_(v) {
 function canonicalCompany_(v) {
   var t = upperKey_(v).replace(/[^A-Z0-9/& ]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return '';
+  // Generic / non-company values → group as Independiente
+  if (t === 'INDEPENDIENTE' || t === 'TRABAJADOR INDEPENDIENTE' || t === 'TRABAJO INDEPENDIENTE') return 'INDEPENDIENTE';
+  if (t.indexOf('ESTANCIA') > -1 && (t.indexOf('ACTIVIDAD') > -1 || t.indexOf('RURAL') > -1)) return 'INDEPENDIENTE';
+  if (t === 'EN LA CHACRA' || t === 'CHACRA' || t === 'POR EL CHACO' || t === 'CAMPO' || t === 'FINCA') return 'INDEPENDIENTE';
+  // Known companies
   if (t.indexOf('TECNOFORESTAL') > -1) return 'TECNOFORESTAL';
-  if (t === 'OAC MAQUINARIA' || t === 'OAC MAQUINARIAS') return 'OAC MAQUINARIAS';
+  if (t.indexOf('OAC MAQUIN') > -1) return 'OAC MAQUINARIAS';
   if (t.indexOf('LUSITANA') > -1) return 'LUSITANA';
-  if (t.indexOf('MARIA EUGENIA') > -1 && t.indexOf('AGRO') > -1) return 'AGROGANADERA MARIA EUGENIA';
-  if (['RANCHO FORESTAL','RANCHO FORESTA','RANCHO FORERSTAL','RANCHO FOTESTAL'].indexOf(t) > -1) return 'RANCHO FORESTAL';
+  if (t.indexOf('AGROGANADERA MARIA EUGENIA') > -1) return 'AGROGANADERA MARIA EUGENIA';
+  if (t.indexOf('MARIA EUGENIA') > -1 && (t.indexOf('AGRO') > -1 || t.indexOf('GANADERA') > -1)) return 'AGROGANADERA MARIA EUGENIA';
+  if (t.indexOf('RANCHO FORESTAL') > -1 || t === 'RANCHO FORESTA' || t === 'RANCHO FORERSTAL' || t === 'RANCHO FOTESTAL') return 'RANCHO FORESTAL';
   if (t === 'PLAN SUR' || t === 'PLANSUR') return 'PLANSUR';
   if (t.indexOf('PROSEGUR') > -1) return 'PROSEGUR';
-  if (['CONSTRUCTORA JM','JM CONSTRUCTORA','JM CONSTRUCCIONES','CONSTRUCTORA JM INGENIERIA','CONSTRUCTORA JM/ELECTROMECANICA SAN RAFAEL','CONSTRUCTORA JM KUROSU & CIA S A'].indexOf(t) > -1) return 'CONSTRUCTORA JM';
+  if (t.indexOf('CONSTRUCTORA JM') > -1 || t === 'JM CONSTRUCTORA' || t === 'JM CONSTRUCCIONES') return 'CONSTRUCTORA JM';
   if (t.indexOf('BUREAU VERITAS') > -1) return 'BUREAU VERITAS';
-  if (t.indexOf('GNF') > -1) return 'GNF';
-  if (t.indexOf('FDE') > -1) return 'FDE';
-  if (t.indexOf('INDEPENDIENTE') > -1) return 'INDEPENDIENTE';
+  if (t === 'GNF' || t.indexOf('GNF ') > -1 || t.indexOf(' GNF') > -1) return 'GNF';
+  if (t === 'FDE' || t.indexOf('FDE ') > -1 || t.indexOf(' FDE') > -1) return 'FDE';
   if (t.indexOf('RED FORESTAL') > -1) return 'RED FORESTAL';
-  if (t.indexOf('TOCSA') > -1) return 'TOCSA';
-  if (t.indexOf('ECOMIPA') > -1) return 'ECOMIPA';
+  if (t.indexOf('TOCSA') > -1 || t.indexOf('ECOMIPA') > -1) return 'TOCSA/ECOMIPA';
   if (t.indexOf('FORMIGHIERI') > -1) return 'FORMIGHIERI';
   if (t.indexOf('CECON') > -1) return 'CECON';
-  if (t.indexOf('DAF') > -1) return 'DAF';
+  if (t.indexOf('DAF') > -1 && t.length <= 5) return 'DAF';
   if (t.indexOf('HELITACTICA') > -1) return 'HELITACTICA';
   if (t.indexOf('FORESTADORA DEL ESTE') > -1) return 'FORESTADORA DEL ESTE';
   if (t.indexOf('LO DE GANSO') > -1) return 'LO DE GANSO';
   if (t.indexOf('SUDAMERIS') > -1) return 'SUDAMERIS BANK';
   if (t.indexOf('RANCHALES') > -1) return 'RANCHALES';
-  if (t.indexOf('POR EL CHACO') > -1) return 'POR EL CHACO';
   if (t.indexOf('EFISA') > -1) return 'EFISA';
+  if (t.indexOf('EL MEJOR') > -1) return 'EL MEJOR';
   if (t.indexOf('INFOMASTER') > -1) return 'INFOMASTER';
   if (t.indexOf('TECNOEDIL') > -1) return 'TECNOEDIL S A';
   if (t.indexOf('AGRAFOREST') > -1) return 'AGRAFOREST';
@@ -517,7 +538,8 @@ function canonicalCompany_(v) {
   if (t.indexOf('SACEEM') > -1) return 'SACEEM';
   if (t.indexOf('SJ GREEN') > -1) return 'SJ GREEN';
   if (t.indexOf('GANADERA VISTA ALEGRE') > -1) return 'GANADERA VISTA ALEGRE';
-  if (t.indexOf('FRIGOR') > -1 && t.indexOf('FICO') > -1) return 'FRIGORIFICO CONCEPCION';
+  if (t.indexOf('FRIGOR') > -1) return 'FRIGORIFICO CONCEPCION';
+  if (t.indexOf('INDEPENDIENTE') > -1) return 'INDEPENDIENTE';
   return properCase_(t);
 }
 
