@@ -590,10 +590,7 @@ function renderCurrentTab(){
     dashboard:renderDashboard, responses:renderResponses,
     invitations:renderInvitations, users:renderUsers,
     config:renderConfig, editions:renderEditions,
-    survey:function(v){
-      renderSurveyLoading(v);
-      return loadSurveySchema(v, true);
-    }
+    survey:function(v){ return renderSurvey(v); }
   };
   const handler=tabHandlers[state.activeTab];
   if(!handler){ view.innerHTML='<div class="card"><p class="muted">Vista no disponible.</p></div>'; return; }
