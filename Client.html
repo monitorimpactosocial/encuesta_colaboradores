@@ -529,7 +529,7 @@ function renderPanel(){
         '<div class="header-right">'+
           '<div class="edition-pill" title="Edición activa">'+esc(b.activeEdition)+'</div>'+
           '<span class="badge" style="margin-right:8px; border:none; background:var(--primary); color:white;">'+esc(b.user.role)+'</span>'+
-          (b.user.role==='admin'?'<button class="btn btn-ghost" id="btnRebuild" title="Recalcular analítica">↻</button>':'')+
+          (b.user.role==='admin'?'<button class="btn btn-ghost" id="btnRebuild" title="Reconstruir BASE_ANALITICA desde RESPUESTAS y limpiar caché del dashboard" style="font-size:12px;">↻ Recalcular datos</button>':'')+
           '<button class="btn btn-ghost" id="btnLogout" style="color:var(--danger);">Salir</button>'+
         '</div>'+
       '</header>'+
@@ -1657,13 +1657,55 @@ function loadSurveySchema(view, forcePreviewMode){
 // renders the V2 sectioned preview.  When accessed via a public survey token
 // it falls through to the original flat form.
 function renderSurvey(view) {
-  // Admin/viewer context: use the V2 stepper
+  // Admin/viewer context: dual-tab preview (Interno / Externo)
   if (state.sessionToken) {
     var mount = view || document.getElementById('view') || app;
+    if (!state.surveyPreviewTipo) state.surveyPreviewTipo = 'Directo';
+
+    function surveyTabClass(tipo) {
+      return 'btn ' + (state.surveyPreviewTipo === tipo ? 'btn-primary' : 'btn-ghost');
+    }
+
+    mount.innerHTML =
+      '<div style="padding:16px 16px 0; border-bottom:1px solid var(--border); margin-bottom:0;">'+
+        '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-bottom:12px;">'+
+          '<span class="muted small" style="font-weight:700; margin-right:4px;">Vista previa del formulario:</span>'+
+          '<button class="'+surveyTabClass('Directo')+'" id="btnPreviewInterno" style="min-width:220px;">'+
+            '&#128274; Formulario Interno (Directo Paracel)'+
+          '</button>'+
+          '<button class="'+surveyTabClass('Indirecto')+'" id="btnPreviewExterno" style="min-width:220px;">'+
+            '&#128101; Formulario Externo (Contratista)'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+      '<div id="surveyPreviewMount"></div>';
+
+    function switchTipo(tipo) {
+      state.surveyPreviewTipo = tipo;
+      state.surveySectionIndex = 0;
+      state.surveyDraft = { tipo_colaborador: tipo };
+      localStorage.setItem(surveyDraftKey_(), JSON.stringify(state.surveyDraft));
+      var bi = document.getElementById('btnPreviewInterno');
+      var be = document.getElementById('btnPreviewExterno');
+      if (bi) bi.className = surveyTabClass('Directo');
+      if (be) be.className = surveyTabClass('Indirecto');
+      var pm = document.getElementById('surveyPreviewMount');
+      if (!pm) return;
+      renderSurveyLoading(pm);
+      loadSurveySchema(pm, true);
+    }
+
+    var bInt = document.getElementById('btnPreviewInterno');
+    var bExt = document.getElementById('btnPreviewExterno');
+    if (bInt) bInt.onclick = function() { switchTipo('Directo'); };
+    if (bExt) bExt.onclick = function() { switchTipo('Indirecto'); };
+
+    state.surveyDraft = { tipo_colaborador: state.surveyPreviewTipo };
+    localStorage.setItem(surveyDraftKey_(), JSON.stringify(state.surveyDraft));
     state.surveySectionIndex = 0;
-    state.surveyDraft = (state.surveyDraft && typeof state.surveyDraft === 'object') ? state.surveyDraft : {};
-    renderSurveyLoading(mount);
-    loadSurveySchema(mount, true /* preview mode */);
+    var pm = document.getElementById('surveyPreviewMount');
+    renderSurveyLoading(pm);
+    loadSurveySchema(pm, true);
     return;
   }
   // Public token context: original flat form (legacy)
