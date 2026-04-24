@@ -177,8 +177,11 @@ function buildResponseRow_(payload, invitation) {
     tipo_colaborador: normalizeText_(payload.tipo_colaborador),
     area_colaborador_indirecto_raw: normalizeText_(payload.area_colaborador_indirecto),
     area_colaborador_indirecto: canonicalArea_(payload.area_colaborador_indirecto),
+    area_paracel_raw: normalizeText_(payload.area_paracel),
+    area_paracel: canonicalArea_(payload.area_paracel),
     cargo_raw: normalizeText_(payload.cargo),
     cargo: properCase_(payload.cargo),
+    grupo_cargo: computeGrupoCargo_(payload.cargo),
     es_cargo_directivo: canonicalYesNo_(payload.es_cargo_directivo),
     nombre_completo_raw: normalizeText_(payload.nombre_completo),
     nombre_completo: properCase_(payload.nombre_completo),
@@ -300,11 +303,11 @@ function canonicalArea_(v) {
   var t = upperKey_(v);
   if (t === 'FORESTAL') return 'Forestal';
   if (t === 'INDUSTRIAL') return 'Industrial';
-  if (t.indexOf('LOGIST') > -1 || t.indexOf('TRANSPORT') > -1 || t.indexOf('CHOFER') > -1 || t.indexOf('TRACTOR') > -1 || t.indexOf('MAQUIN') > -1) return 'LogÃ­stica y transporte';
+  if (t.indexOf('LOGIST') > -1 || t.indexOf('TRANSPORT') > -1 || t.indexOf('CHOFER') > -1 || t.indexOf('TRACTOR') > -1 || t.indexOf('MAQUIN') > -1) return 'Logística y transporte';
   if (t.indexOf('SEGUR') > -1 || t.indexOf('VIGIL') > -1 || t.indexOf('PATRULL') > -1) return 'Seguridad';
   if (t.indexOf('SERVICIO') > -1 || t.indexOf('LIMPIE') > -1 || t.indexOf('MANTEN') > -1) return 'Servicios generales';
-  if (t.indexOf('COCIN') > -1 || t.indexOf('ALIMENT') > -1) return 'AlimentaciÃ³n y cocina';
-  if (t.indexOf('CONSTRU') > -1 || t.indexOf('OBRA') > -1 || t.indexOf('MONTA') > -1 || t.indexOf('ALBAN') > -1) return 'ConstrucciÃ³n y obras';
+  if (t.indexOf('COCIN') > -1 || t.indexOf('ALIMENT') > -1) return 'Alimentación y cocina';
+  if (t.indexOf('CONSTRU') > -1 || t.indexOf('OBRA') > -1 || t.indexOf('MONTA') > -1 || t.indexOf('ALBAN') > -1) return 'Construcción y obras';
   if (t.indexOf('ADMIN') > -1 || t.indexOf('PROFES') > -1 || t.indexOf('AMBIENT') > -1 || t.indexOf('MEDIC') > -1 || t.indexOf('TECNIC') > -1) return 'Administrativo / profesional';
   if (t === 'OTRO') return 'Otro';
   return properCase_(v);
@@ -323,9 +326,9 @@ function canonicalMarital_(v) {
     'SOLTERA':'Soltero/a',
     'CASADO':'Casado/a',
     'CASADA':'Casado/a',
-    'UNION LIBRE':'UniÃ³n libre',
-    'UNION DE HECHO':'UniÃ³n libre',
-    'CONCUBINATO':'UniÃ³n libre',
+    'UNION LIBRE':'Unión libre',
+    'UNION DE HECHO':'Unión libre',
+    'CONCUBINATO':'Unión libre',
     'SEPARADO':'Separado/a',
     'SEPARADA':'Separado/a',
     'DIVORCIADO':'Divorciado/a',
@@ -345,8 +348,8 @@ function canonicalEducation_(v) {
     'PRIMARIA COMPLETA':'Primaria completa',
     'SECUNDARIA INCOMPLETA':'Secundaria incompleta',
     'SECUNDARIA COMPLETA':'Secundaria completa',
-    'TECNICO':'TÃ©cnico',
-    'TECNICO SUPERIOR':'TÃ©cnico',
+    'TECNICO':'Técnico',
+    'TECNICO SUPERIOR':'Técnico',
     'UNIVERSITARIO INCOMPLETO':'Universitario incompleto',
     'UNIVERSITARIA INCOMPLETA':'Universitario incompleto',
     'UNIVERSITARIO COMPLETO':'Universitario completo',
@@ -521,4 +524,20 @@ function canonicalCompany_(v) {
   if (t.indexOf('GANADERA VISTA ALEGRE') > -1) return 'GANADERA VISTA ALEGRE';
   if (t.indexOf('FRIGOR') > -1 && t.indexOf('FICO') > -1) return 'FRIGORIFICO CONCEPCION';
   return properCase_(t);
+}
+
+function computeGrupoCargo_(cargo) {
+  if (!cargo) return '';
+  var t = String(cargo).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/\b(plant|personal.*campo|ayudante.*campo|foresta|siembra|podad|chapea|desmal|rozad|vivero|herbicid|fumiga|colect|semilla|raleo|aserrader|chipeado)\b/.test(t)) return 'Campo / Forestacion';
+  if (/\b(tractor|harvester|forwarder|pala.*carg|retroexcav|motonivelad|bulldozer|compactad|operador.*maquin|maquinista)\b/.test(t)) return 'Operador de Maquinaria';
+  if (/\b(gerente|subgerente|director|jefe|coordinad|encargad|lider|capataz|superintend|responsabl|supervisor|head of|propietari|dueno)\b/.test(t)) return 'Direccion / Gerencia';
+  if (/\b(tecni[ck]|analista|ingenier|profesion|ambient|medic|enfermer|laborat|topograf|agronom|biologo|quimico|arquitect|planificad|consultor)\b/.test(t)) return 'Tecnico / Profesional';
+  if (/\b(chofer|conductor|transport|camion|motorista)\b/.test(t)) return 'Chofer / Transporte';
+  if (/\b(albanil|carpint|herrer|plomero|electri|soldad|pintor|montad|construc)\b/.test(t)) return 'Construccion / Mantenimiento';
+  if (/\b(vigilante|seguri|guardia|patrull|custodio)\b/.test(t)) return 'Seguridad / Vigilancia';
+  if (/\b(cocin|aliment|ayud.*cocin|nutrici|comedor)\b/.test(t)) return 'Cocina / Alimentacion';
+  if (/\b(limpieza|servici.*general|aseo|lavandera|mucama)\b/.test(t)) return 'Servicios / Limpieza';
+  if (/\b(admin|secreta|recepci|contabil|finanza|recursos.*human|tesorero|cajero)\b/.test(t)) return 'Administrativo';
+  return 'Otro';
 }

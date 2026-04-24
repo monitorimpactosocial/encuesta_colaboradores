@@ -18,7 +18,7 @@ var APP_CFG = {
   TOKEN_HOURS: 24 * 30,
   PII_FIELDS: ['nombre_completo', 'nombre_completo_raw', 'cedula', 'cedula_raw'],
   LONG_FIELDS: [
-    'tipo_colaborador','area_colaborador_indirecto','cargo','es_cargo_directivo','sexo','edad','edad_grupo',
+    'tipo_colaborador','area_colaborador_indirecto','area_paracel','cargo','grupo_cargo','es_cargo_directivo','sexo','edad','edad_grupo',
     'estado_civil','nivel_educativo',
     'departamento_procedencia','pais_origen','distrito_procedencia','localidad_procedencia',
     'departamento_residencia','distrito_residencia','localidad_residencia','area_residencia',

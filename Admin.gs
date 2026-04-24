@@ -18,6 +18,9 @@ var ANALYTIC_MIN_FIELDS_ = [
   'fecha_encuesta',
   'tipo_colaborador',
   'area_colaborador_indirecto',
+  'area_paracel',
+  'cargo',
+  'grupo_cargo',
   'sexo',
   'es_cargo_directivo',
   'edad',
@@ -104,6 +107,8 @@ function getDashboardSummary(sessionToken, filters) {
   var mEmpresa = {};
   var mSalario = {};
   var mCalidad = {};
+  var byGrupoCargo = {};
+  var bySexoSalario = {};
 
   function inc_(map, key) {
     map[key] = (map[key] || 0) + 1;
@@ -250,6 +255,15 @@ function getDashboardSummary(sessionToken, filters) {
     inc_(bySalario, sal);
     incM_(mSalario, ed, sal);
 
+    var gc = normalizeText_(r.grupo_cargo) || (r.cargo ? computeGrupoCargo_(r.cargo) : '');
+    if (gc) inc_(byGrupoCargo, gc);
+
+    var sexoKey = keyOf_(r.sexo);
+    if (sal && sal !== 'Sin dato' && sexoKey && (sexoKey === 'Masculino' || sexoKey === 'Femenino')) {
+      if (!bySexoSalario[sexoKey]) bySexoSalario[sexoKey] = {};
+      bySexoSalario[sexoKey][sal] = (bySexoSalario[sexoKey][sal] || 0) + 1;
+    }
+
     inc_(byGrupoEdad, keyOf_(r.edad_grupo));
     var cal = classifyCalidad_(r.estado_calidad);
     inc_(byEstadoCalidad, keyOf_(r.estado_calidad));
@@ -395,6 +409,8 @@ function getDashboardSummary(sessionToken, filters) {
     porSalario:         sortSalario_(mapToItems_(bySalario)),
     porGrupoEdad:       sortGrupoEdad_(mapToItems_(byGrupoEdad)),
     porEstadoCalidad:   mapToItems_(byEstadoCalidad),
+    porGrupoCargo:      mapToItems_(byGrupoCargo).sort(function(a,b){ return b.value - a.value; }),
+    brechaSalarial:     bySexoSalario,
     multi: {
       tipo: mTipo,
       sexo: mSexo,
@@ -467,6 +483,22 @@ function sortSalario_(items) {
 function sortGrupoEdad_(items) {
   var ord = {'18-24':1,'25-34':2,'35-44':3,'45-54':4,'55-64':5,'65+':6};
   return items.sort(function(a,b){ return (ord[a.label]||99)-(ord[b.label]||99); });
+}
+
+function computeGrupoCargo_(cargo) {
+  if (!cargo) return '';
+  var t = normalizeText_(cargo).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/\b(plant|personal.*campo|ayudante.*campo|foresta|siembra|podad|chapea|desmal|rozad|vivero|herbicid|fumiga|colect|semilla|raleo|aserrader)\b/.test(t)) return 'Campo / Forestacion';
+  if (/\b(tractor|harvester|forwarder|pala.*carg|retroexcav|motonivelad|bulldozer|compactad|operador.*maquin|maquinista)\b/.test(t)) return 'Operador de Maquinaria';
+  if (/\b(gerente|subgerente|director|jefe|coordinad|encargad|lider|capataz|superintend|responsabl|supervisor|head of|propietari)\b/.test(t)) return 'Direccion / Gerencia';
+  if (/\b(tecni[ck]|analista|ingenier|profesion|ambient|medic|enfermer|laborat|topograf|agronom|biologo|quimico|arquitect|consultor)\b/.test(t)) return 'Tecnico / Profesional';
+  if (/\b(chofer|conductor|transport|camion|motorista)\b/.test(t)) return 'Chofer / Transporte';
+  if (/\b(albanil|carpint|herrer|plomero|electri|soldad|pintor|montad|construc)\b/.test(t)) return 'Construccion / Mantenimiento';
+  if (/\b(vigilante|seguri|guardia|patrull|custodio)\b/.test(t)) return 'Seguridad / Vigilancia';
+  if (/\b(cocin|aliment|ayud.*cocin|nutrici|comedor)\b/.test(t)) return 'Cocina / Alimentacion';
+  if (/\b(limpieza|servici.*general|aseo|lavandera|mucama)\b/.test(t)) return 'Servicios / Limpieza';
+  if (/\b(admin|secreta|recepci|contabil|finanza|recursos.*human|tesorero|cajero)\b/.test(t)) return 'Administrativo';
+  return 'Otro';
 }
 
 function listResponses(sessionToken, limit) {
@@ -795,7 +827,8 @@ function buildSnapshotCsv(sessionToken, editionId) {
   if (!rows.length) return '';
 
   var fields = [
-    'submission_ts','edicion','fecha_encuesta','tipo_colaborador','sexo','es_cargo_directivo','edad','edad_grupo',
+    'submission_ts','edicion','fecha_encuesta','tipo_colaborador','area_paracel','grupo_cargo',
+    'sexo','es_cargo_directivo','edad','edad_grupo',
     'departamento_residencia','descuento_ips_actual','salario_actual_banda',
     'empresa_contratista','estado_calidad','n_flags','respondente_id','source_uuid'
   ];

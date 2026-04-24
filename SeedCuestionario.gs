@@ -114,16 +114,16 @@ function seedQuestionnaire() {
   var fuels = ['Gas','Electricidad','Leña','Carbón','Ninguno (no cocina)','Otro'];
 
   var districts = [
-    'ConcepciÃ³n','Horqueta','Paso Barreto','Sargento JosÃ© FÃ©lix LÃ³pez','Arroyito','PuentesiÃ±o','Loreto','Azotey',
-    'Paso Horqueta','BelÃ©n','Bella Vista Norte','Yby YaÃº','AsunciÃ³n','San Lorenzo','Luque','Fernando de la Mora',
-    'San Pedro','Santa Rosa del Aguaray','Pedro Juan Caballero','Ciudad del Este','LambarÃ©','Ã‘emby','Villa Elisa',
-    'CapiatÃ¡','ItauguÃ¡','CaaguazÃº','CaazapÃ¡','Curuguaty','Natalio','San Estanislao','Coronel Oviedo',
-    'BenjamÃ­n Aceval','Hernandarias','Bella Vista','Limpio','Nueva Germania','Hugua Ã‘andu','San Alfredo',
-    'VallemÃ­','EncarnaciÃ³n'
+    ‘Concepción’,’Horqueta’,’Paso Barreto’,’Sargento José Félix López’,’Arroyito’,’Puentesiño’,’Loreto’,’Azotey’,
+    ‘Paso Horqueta’,’Belén’,’Bella Vista Norte’,’Yby Yaú’,’Asunción’,’San Lorenzo’,’Luque’,’Fernando de la Mora’,
+    ‘San Pedro’,’Santa Rosa del Aguaray’,’Pedro Juan Caballero’,’Ciudad del Este’,’Lambaré’,’Ñemby’,’Villa Elisa’,
+    ‘Capiatá’,’Itauguá’,’Caaguazú’,’Caazapá’,’Curuguaty’,’Natalio’,’San Estanislao’,’Coronel Oviedo’,
+    ‘Benjamín Aceval’,’Hernandarias’,’Bella Vista’,’Limpio’,’Nueva Germania’,’Hugua Ñandu’,’San Alfredo’,
+    ‘Vallemí’,’Encarnación’
   ];
   var indirectAreas = [
-    'Forestal','Industrial','LogÃ­stica y transporte','Seguridad','Servicios generales',
-    'AlimentaciÃ³n y cocina','ConstrucciÃ³n y obras','Administrativo / profesional','Otro'
+    ‘Forestal’,’Industrial’,’Logística y transporte’,’Seguridad’,’Servicios generales’,
+    ‘Alimentación y cocina’,’Construcción y obras’,’Administrativo / profesional’,’Otro’
   ];
   var companies = [
     'TECNOFORESTAL','OAC MAQUINARIAS','LUSITANA','AGROGANADERA MARIA EUGENIA','PROSEGUR','RANCHO FORESTAL',
@@ -135,28 +135,28 @@ function seedQuestionnaire() {
   var cargos = [
     'Ayudante de campo','Operador de maquinaria','Vigilante','Personal de campo','Operador','Chofer','Plantador',
     'Servicios generales','Auxiliar de campo','Operador de tractor','Cocinera','Ayudante de cocina',
-    'Auxiliar administrativo','Asistente administrativo','Asistente forestal','Limpieza','PeÃ³n de campo','MecÃ¡nico',
+    'Auxiliar administrativo','Asistente administrativo','Asistente forestal','Limpieza','Peón de campo','Mecánico',
     'Montador','Enfermero','Tractorista','Mantenimiento','Chofer de colectivo','Encargado de campo',
-    'Patrullero','Oficial albaÃ±il','Electricista','TÃ©cnico de seguridad','Operador de pala cargadora',
+    'Patrullero','Oficial albañil','Electricista','Técnico de seguridad','Operador de pala cargadora',
     'Analista ambiental'
   ];
-  var civilStatus = ['Soltero/a','Casado/a','UniÃ³n libre','Separado/a','Divorciado/a','Viudo/a','Prefiero no responder'];
+  var civilStatus = ['Soltero/a','Casado/a','Unión libre','Separado/a','Divorciado/a','Viudo/a','Prefiero no responder'];
   var education = [
     'Sin escolaridad','Primaria incompleta','Primaria completa','Secundaria incompleta','Secundaria completa',
-    'TÃ©cnico','Universitario incompleto','Universitario completo','Posgrado'
+    'Técnico','Universitario incompleto','Universitario completo','Posgrado'
   ];
   var housing = ['Propia','Alquilada','Cedida','Familiar','Otra'];
   var transport = ['A pie','Bicicleta','Moto','Auto','Bus','Transporte de la empresa','Otro'];
-  var tenure = ['Menos de 6 meses','De 6 a 12 meses','1 a 2 aÃ±os','3 a 5 aÃ±os','6 a 10 aÃ±os','MÃ¡s de 10 aÃ±os'];
+  var tenure = ['Menos de 6 meses','De 6 a 12 meses','1 a 2 años','3 a 5 años','6 a 10 años','Más de 10 años'];
   var shifts = ['Administrativo','Diurno','Nocturno','Rotativo','Por jornada / campo'];
-  var ethnicGroups = ['Ava GuaranÃ­','Mbya GuaranÃ­','NivaclÃ©','Enxet','SanapanÃ¡','Ayoreo','MakÃ¡','Qom / Toba','AngaitÃ©','Otro'];
+  var ethnicGroups = ['Ava Guaraní','Mbya Guaraní','Nivaclé','Enxet','Sanapá','Ayoreo','Maká','Qom / Toba','Angaité','Otro'];
 
   // Columns: section_order | section_id | section_label | question_order | field_name | label |
   //          input_type | required | options_json | visible_if | contains_pii | include_in_analytics
   var rows = [
     // ── Sección 1: Identificación laboral ───────────────────────────────
     [1,'S1','Identificación laboral', 10,'tipo_colaborador',
-      'Tipo de colaborador',
+      '¿Cómo está vinculado con Paracel? (Directo = empleado Paracel · Indirecto = empresa contratista)',
       'select', true, JSON.stringify(['Directo','Indirecto']),
       '', false, true],
 
@@ -172,7 +172,7 @@ function seedQuestionnaire() {
 
     [1,'S1','Identificación laboral', 35,'empresa_contratista_otra',
       'Especifique el nombre de la empresa contratista',
-      'select_or_text', true, JSON.stringify(cargos),
+      'text', true, '[]',
       'empresa_contratista=Otra (especificar)', false, true],
 
     [1,'S1','Identificación laboral', 40,'cargo',
@@ -180,13 +180,18 @@ function seedQuestionnaire() {
       'select_or_text', true, JSON.stringify(cargos),
       '', false, true],
 
+    [1,'S1','Identificación laboral', 45,'area_paracel',
+      'Área de trabajo en Paracel',
+      'select', true, JSON.stringify(indirectAreas),
+      'tipo_colaborador=Directo', false, true],
+
     // ── Sección 2: Datos personales ─────────────────────────────────────
-    [1,'S1','IdentificaciÃ³n laboral', 50,'antiguedad_empresa_banda',
+    [1,'S1','Identificación laboral', 50,'antiguedad_empresa_banda',
       'Tiempo trabajando en Paracel o con su contratista actual',
       'select', true, JSON.stringify(tenure),
       '', false, true],
 
-    [1,'S1','IdentificaciÃ³n laboral', 60,'turno_trabajo',
+    [1,'S1','Identificación laboral', 60,'turno_trabajo',
       'Turno o modalidad de trabajo',
       'select', true, JSON.stringify(shifts),
       '', false, true],
@@ -271,7 +276,7 @@ function seedQuestionnaire() {
 
     [5,'S5','Comunidad indígena', 20,'etnia',
       'Etnia o pueblo indígena al que pertenece',
-      'text', false, '[]',
+      'select_or_text', false, JSON.stringify(ethnicGroups),
       'pertenece_comunidad_indigena=Sí', false, true],
 
     // ── Sección 6: Condiciones del hogar ────────────────────────────────

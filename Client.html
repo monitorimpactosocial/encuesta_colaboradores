@@ -293,7 +293,8 @@ const SURVEY_VIS_DEP_FIELDS = {
   departamento_procedencia:1,
   pertenece_comunidad_indigena:1,
   combustible_cocina:1,
-  trabajaba_antes_paracel:1
+  trabajaba_antes_paracel:1,
+  empresa_contratista:1
 };
 
 function surveyContextKey_(){
@@ -358,6 +359,7 @@ function surveyFieldMeta_(field){
     cedula:{placeholder:'Solo numeros, sin puntos', inputmode:'numeric'},
     edad:{placeholder:'Ej. 34', min:'18', max:'80'},
     area_colaborador_indirecto:{placeholder:'Seleccione o escriba el area principal', full:true},
+    area_paracel:{placeholder:'Seleccione el area de trabajo en Paracel', full:true},
     empresa_contratista:{placeholder:'Seleccione o escriba la empresa', full:true},
     cargo:{placeholder:'Seleccione o escriba el cargo', full:true},
     distrito_procedencia:{placeholder:'Seleccione o escriba el distrito'},
@@ -802,6 +804,15 @@ function renderDashboard(view){
     if(topEmp) insights.push('Empresa indirecta con mayor presencia: '+topEmp.label+' ('+n(topEmp.value)+').');
     insights.push('Participacion de mujeres en cargos directivos: '+directivasPct+'%.');
     if(delta !== 0) insights.push('Variacion de los ultimos 30 dias frente al periodo previo: '+deltaTxt+'.');
+    var topGC = Array.isArray(s.porGrupoCargo) && s.porGrupoCargo[0];
+    if(topGC) insights.push('Categoria de cargo mas frecuente: '+topGC.label+' ('+n(topGC.value)+' encuestados, '+percent(n(topGC.value),total)+'%).');
+    var brechaM = s.brechaSalarial && s.brechaSalarial['Masculino'];
+    var brechaF = s.brechaSalarial && s.brechaSalarial['Femenino'];
+    if(brechaM && brechaF) {
+      var cntM = Object.values(brechaM).reduce(function(a,b){return a+n(b);},0);
+      var cntF = Object.values(brechaF).reduce(function(a,b){return a+n(b);},0);
+      if(cntM > 0 && cntF > 0) insights.push('Datos de brecha salarial disponibles: '+cntM.toLocaleString()+' hombres y '+cntF.toLocaleString()+' mujeres con banda salarial declarada. Ver grafico para distribucion detallada.');
+    }
 
     view.innerHTML=
       '<div style="display:flex; flex-direction:row; gap:20px; align-items:flex-start;">'+
@@ -912,6 +923,11 @@ function renderDashboard(view){
       '<div class="grid-2" style="margin-top:16px">'+
         '<div class="card"><div class="chart-hd"><h3>Tipo de colaborador</h3><span class="chart-total">'+total+' total</span></div><div style="position:relative;height:220px;width:100%"><canvas id="cTipo"></canvas></div></div>'+
         '<div class="card"><div class="chart-hd"><h3>Estado de calidad</h3><span class="chart-total">'+total+' total</span></div><div style="position:relative;height:220px;width:100%"><canvas id="cCalidad"></canvas></div></div>'+
+      '</div>'+
+
+      '<div class="grid-2" style="margin-top:16px">'+
+        '<div class="card"><div class="chart-hd"><h3>Distribución por categoría de cargo</h3><span class="chart-total">grupo_cargo</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Distribución de encuestados por categoría funcional del cargo declarado.</p><div style="position:relative;height:320px;width:100%"><canvas id="cGrupoCargo"></canvas></div></div>'+
+        '<div class="card"><div class="chart-hd"><h3>Brecha salarial por sexo</h3><span class="chart-total">Masculino vs Femenino</span></div><p class="muted small" style="margin-bottom:8px; line-height:1.2;">Distribución de bandas salariales declaradas por género. Permite analizar la composición de la brecha.</p><div style="position:relative;height:320px;width:100%"><canvas id="cBrecha"></canvas></div></div>'+
       '</div>'+
 
       '<div class="card" style="margin-top:18px">'+
@@ -1072,6 +1088,30 @@ function renderDashboard(view){
 
       donut('cTipo', aggTipo, ['#0f766e','#6366f1','#d97706','#e11d48','#059669']);
       donut('cCalidad', aggCalidad, ['#16a34a','#d97706','#dc2626','#94a3b8']);
+
+      // grupo_cargo chart
+      var gcItems = Array.isArray(s.porGrupoCargo) ? s.porGrupoCargo : [];
+      hbar('cGrupoCargo', gcItems, TEAL_GRAD);
+
+      // brecha salarial chart
+      var brecha = s.brechaSalarial || {};
+      var salBands = ['Menos del salario mínimo','Salario mínimo',
+        'Más del salario mínimo y hasta 3 millones','Más de 3 millones y hasta 5 millones',
+        'Más de 5 millones y hasta 7 millones','Más de 7 millones y hasta 10 millones',
+        'Más de 10 millones y hasta 13 millones','Más de 13 millones y hasta 15 millones',
+        'Más de 15 millones y hasta 20 millones','Más de 20 millones y hasta 30 millones',
+        'Más de 30 millones'];
+      var salLabelsBrecha = salBands.map(function(b){
+        return b.replace('Menos del salario mínimo','< Mín.').replace('Salario mínimo','1 Mín.')
+          .replace('Más del salario mínimo y hasta 3 millones','1-3 M').replace('Más de ','').replace(' millones','M').replace(' y hasta',' -').replace(' millones','M');
+      });
+      var mData = salBands.map(function(b){ return n((brecha['Masculino']||{})[b]); });
+      var fData = salBands.map(function(b){ return n((brecha['Femenino']||{})[b]); });
+      multiBar('cBrecha', salLabelsBrecha,
+        [{label:'Masculino', data:mData, backgroundColor:'#6366f1', borderRadius:4},
+         {label:'Femenino',  data:fData, backgroundColor:'#e11d48', borderRadius:4}],
+        {horizontal:true}
+      );
     });
   });
 }
@@ -1716,8 +1756,8 @@ function renderSurveyV2(view, previewMode){
     '<div class="survey-shell survey-shell-rich">'+
       '<div class="survey-hero">'+
         '<div>'+
-          '<h2>'+esc(state.schema.editionId)+' Â· Encuesta de colaboradores</h2>'+
-          '<p>Acceso personalizado por enlace. El formulario estÃ¡ organizado en bloques cortos y guarda sus avances automÃ¡ticamente.</p>'+
+          '<h2>'+esc(state.schema.editionId)+' · Encuesta de colaboradores</h2>'+
+          '<p>Acceso personalizado por enlace. El formulario está organizado en bloques cortos y guarda sus avances automáticamente.</p>'+
         '</div>'+
         '<div class="survey-hero-tags">'+
           '<span class="badge info">Autoguardado activo</span>'+
@@ -1775,6 +1815,13 @@ function renderSurveyV2(view, previewMode){
   function renderSurveySection(){
     const sec = sections[state.surveySectionIndex];
     const visible = surveyVisibleQuestions_(sec);
+    const tipoVal = surveyValues_()['tipo_colaborador'] || '';
+    const versionBanner = tipoVal
+      ? '<div class="notice" style="margin-bottom:12px; background:'+(tipoVal==='Directo'?'rgba(99,102,241,0.08)':'rgba(15,118,110,0.08)')+'; border-left:4px solid '+(tipoVal==='Directo'?'#6366f1':'#0f766e')+';">'+
+          '<strong>'+(tipoVal==='Directo'?'Formulario Interno (funcionario Paracel)':'Formulario Externo (colaborador / contratista)')+'</strong>'+
+          ' — Las preguntas relevantes para su tipo de vinculación están activas.'+
+        '</div>'
+      : '';
     host.innerHTML =
       '<div class="survey-panel-head">'+
         '<div>'+
@@ -1783,6 +1830,7 @@ function renderSurveyV2(view, previewMode){
         '</div>'+
         '<span class="badge '+(surveyMissingForSection_(sec).length ? 'warn' : 'ok')+'">'+(surveyMissingForSection_(sec).length ? 'Pendiente' : 'Completo')+'</span>'+
       '</div>'+
+      versionBanner+
       '<div class="survey-grid">'+
         (visible.length ? visible.map(renderSurveyQuestion_).join('') : '<p class="muted">No hay preguntas visibles en este bloque.</p>')+
       '</div>'+
@@ -1842,7 +1890,7 @@ function renderSurveyV2(view, previewMode){
         clearSurveyDraft_();
         mount.innerHTML =
           '<div class="survey-shell"><div class="card survey-success">'+
-            '<div class="survey-success-mark">âœ…</div>'+
+            '<div class="survey-success-mark">&#10003;</div>'+
             '<h3>Encuesta registrada correctamente</h3>'+
             '<p class="muted">Gracias por completar el formulario. Sus respuestas fueron guardadas de forma segura.</p>'+
           '</div></div>';
