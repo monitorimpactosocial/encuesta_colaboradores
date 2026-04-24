@@ -391,15 +391,10 @@ function canonicalTenure_(v) {
   var map = {
     'MENOS DE 6 MESES':'Menos de 6 meses',
     'DE 6 A 12 MESES':'De 6 a 12 meses',
-    '1 A 2 ANOS':'1 a 2 aÃ±os',
-    '1 A 2 AÃ‘OS':'1 a 2 aÃ±os',
-    '3 A 5 ANOS':'3 a 5 aÃ±os',
-    '3 A 5 AÃ‘OS':'3 a 5 aÃ±os',
-    '6 A 10 ANOS':'6 a 10 aÃ±os',
-    '6 A 10 AÃ‘OS':'6 a 10 aÃ±os',
-    'MAS DE 10 ANOS':'MÃ¡s de 10 aÃ±os',
-    'MAS DE 10 AÃ‘OS':'MÃ¡s de 10 aÃ±os',
-    'MÃS DE 10 AÃ‘OS':'MÃ¡s de 10 aÃ±os'
+    '1 A 2 ANOS':'1 a 2 años',
+    '3 A 5 ANOS':'3 a 5 años',
+    '6 A 10 ANOS':'6 a 10 años',
+    'MAS DE 10 ANOS':'Más de 10 años'
   };
   return map[t] || normalizeText_(v);
 }

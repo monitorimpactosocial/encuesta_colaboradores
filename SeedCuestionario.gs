@@ -114,16 +114,16 @@ function seedQuestionnaire() {
   var fuels = ['Gas','Electricidad','Leña','Carbón','Ninguno (no cocina)','Otro'];
 
   var districts = [
-    ‘Concepción’,’Horqueta’,’Paso Barreto’,’Sargento José Félix López’,’Arroyito’,’Puentesiño’,’Loreto’,’Azotey’,
-    ‘Paso Horqueta’,’Belén’,’Bella Vista Norte’,’Yby Yaú’,’Asunción’,’San Lorenzo’,’Luque’,’Fernando de la Mora’,
-    ‘San Pedro’,’Santa Rosa del Aguaray’,’Pedro Juan Caballero’,’Ciudad del Este’,’Lambaré’,’Ñemby’,’Villa Elisa’,
-    ‘Capiatá’,’Itauguá’,’Caaguazú’,’Caazapá’,’Curuguaty’,’Natalio’,’San Estanislao’,’Coronel Oviedo’,
-    ‘Benjamín Aceval’,’Hernandarias’,’Bella Vista’,’Limpio’,’Nueva Germania’,’Hugua Ñandu’,’San Alfredo’,
-    ‘Vallemí’,’Encarnación’
+    'Concepción','Horqueta','Paso Barreto','Sargento José Félix López','Arroyito','Puentesiño','Loreto','Azotey',
+    'Paso Horqueta','Belén','Bella Vista Norte','Yby Yaú','Asunción','San Lorenzo','Luque','Fernando de la Mora',
+    'San Pedro','Santa Rosa del Aguaray','Pedro Juan Caballero','Ciudad del Este','Lambaré','Ñemby','Villa Elisa',
+    'Capiatá','Itauguá','Caaguazú','Caazapá','Curuguaty','Natalio','San Estanislao','Coronel Oviedo',
+    'Benjamín Aceval','Hernandarias','Bella Vista','Limpio','Nueva Germania','Hugua Ñandu','San Alfredo',
+    'Vallemí','Encarnación'
   ];
   var indirectAreas = [
-    ‘Forestal’,’Industrial’,’Logística y transporte’,’Seguridad’,’Servicios generales’,
-    ‘Alimentación y cocina’,’Construcción y obras’,’Administrativo / profesional’,’Otro’
+    'Forestal','Industrial','Logística y transporte','Seguridad','Servicios generales',
+    'Alimentación y cocina','Construcción y obras','Administrativo / profesional','Otro'
   ];
   var companies = [
     'TECNOFORESTAL','OAC MAQUINARIAS','LUSITANA','AGROGANADERA MARIA EUGENIA','PROSEGUR','RANCHO FORESTAL',
